@@ -5,297 +5,233 @@ const {
   Browsers
 } = require("@whiskeysockets/baileys");
 
-const AUTH_DIR = "./auth_info";
+const P = require("pino");
 
-let reconnectTimer = null;
-let pairingRequested = false;
+const AUTH_FOLDER = "./auth_info";
+
+let pairingCodeRequested = false;
 
 async function startWhatsApp() {
-  try {
-    const { state, saveCreds } =
-      await useMultiFileAuthState(AUTH_DIR);
+  console.log("📱 Avvio WhatsApp...");
 
-    const sock = makeWASocket({
-      auth: state,
-      browser: Browsers.ubuntu("Davide WhatsApp Bot"),
-      printQRInTerminal: false,
-      markOnlineOnConnect: false
-    });
+  const { state, saveCreds } =
+    await useMultiFileAuthState(AUTH_FOLDER);
 
-    sock.ev.on("creds.update", saveCreds);
+  const sock = makeWASocket({
+    auth: state,
 
-    sock.ev.on("connection.update", async (update) => {
-      const {
-        connection,
-        lastDisconnect,
-        qr
-      } = update;
+    logger: P({
+      level: "silent"
+    }),
 
+    browser: Browsers.macOS("Google Chrome"),
+
+    printQRInTerminal: false,
+
+    markOnlineOnConnect: false
+  });
+
+  sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("connection.update", async (update) => {
+    const {
+      connection,
+      lastDisconnect,
+      qr
+    } = update;
+
+    console.log(
+      "📡 Stato WhatsApp:",
+      connection || "waiting"
+    );
+
+    // ==========================================
+    // CODICE DI COLLEGAMENTO
+    // ==========================================
+
+    if (
+      !state.creds.registered &&
+      !pairingCodeRequested &&
+      (connection === "connecting" || qr)
+    ) {
+      pairingCodeRequested = true;
+
+      const number = process.env.WHATSAPP_NUMBER;
+
+      if (!number) {
+        console.error("");
+        console.error("❌ ERRORE");
+        console.error(
+          "Manca la variabile WHATSAPP_NUMBER su Railway."
+        );
+        console.error("");
+        return;
+      }
+
+      const cleanNumber = number.replace(/\D/g, "");
+
+      console.log("");
+      console.log("⏳ Preparazione collegamento WhatsApp...");
+      console.log(`📱 Numero: ${cleanNumber}`);
+      console.log("");
+
+      try {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 3000)
+        );
+
+        console.log("📲 Richiesta codice WhatsApp...");
+
+        const code =
+          await sock.requestPairingCode(cleanNumber);
+
+        console.log("");
+        console.log("==========================================");
+        console.log("       🔐 CODICE WHATSAPP");
+        console.log("==========================================");
+        console.log("");
+        console.log(`              ${code}`);
+        console.log("");
+        console.log("==========================================");
+        console.log("Sul telefono:");
+        console.log("");
+        console.log("WhatsApp");
+        console.log("→ Impostazioni");
+        console.log("→ Dispositivi collegati");
+        console.log("→ Collega un dispositivo");
+        console.log("→ Collega con numero di telefono");
+        console.log("");
+        console.log("Inserisci il codice:");
+        console.log(`              ${code}`);
+        console.log("");
+        console.log("==========================================");
+        console.log("");
+
+      } catch (error) {
+        console.error("");
+        console.error("❌ ERRORE GENERAZIONE CODICE");
+        console.error(error);
+        console.error("");
+
+        pairingCodeRequested = false;
+      }
+    }
+
+    // ==========================================
+    // CONNESSIONE RIUSCITA
+    // ==========================================
+
+    if (connection === "open") {
+      console.log("");
+      console.log("==========================================");
+      console.log("       ✅ WHATSAPP COLLEGATO");
+      console.log("==========================================");
+      console.log("");
+
+      pairingCodeRequested = true;
+    }
+
+    // ==========================================
+    // CONNESSIONE CHIUSA
+    // ==========================================
+
+    if (connection === "close") {
+      const statusCode =
+        lastDisconnect?.error?.output?.statusCode;
+
+      console.log("");
       console.log(
-        "📡 Stato WhatsApp:",
-        connection || "waiting"
+        `❌ Connessione chiusa: ${statusCode}`
       );
 
-      /*
-       * =====================================
-       * PAIRING CODE
-       * =====================================
-       */
-
       if (
-        !state.creds.registered &&
-        !pairingRequested &&
-        (connection === "connecting" || qr)
+        statusCode === DisconnectReason.loggedOut
       ) {
-        pairingRequested = true;
-
         console.log(
-          "⏳ Connessione iniziale rilevata."
+          "🚪 WhatsApp ha effettuato il logout."
         );
-
-        // Aspettiamo che il socket sia realmente pronto.
-        await new Promise(resolve =>
-          setTimeout(resolve, 5000)
-        );
-
-        const phoneNumber =
-          process.env.WHATSAPP_NUMBER;
-
-        if (!phoneNumber) {
-          console.error(
-            "❌ WHATSAPP_NUMBER non configurato."
-          );
-          return;
-        }
-
-        try {
-          const cleanNumber =
-            phoneNumber.replace(/\D/g, "");
-
-          console.log(
-            "📱 Richiedo il codice WhatsApp..."
-          );
-
-          const code =
-            await sock.requestPairingCode(
-              cleanNumber
-            );
-
-          console.log("");
-          console.log(
-            "======================================"
-          );
-          console.log(
-            "       🔐 CODICE WHATSAPP"
-          );
-          console.log(
-            "======================================"
-          );
-          console.log("");
-          console.log(
-            "       " + code
-          );
-          console.log("");
-          console.log(
-            "======================================"
-          );
-          console.log(
-            "Sul telefono:"
-          );
-          console.log(
-            "WhatsApp → Impostazioni"
-          );
-          console.log(
-            "→ Dispositivi collegati"
-          );
-          console.log(
-            "→ Collega un dispositivo"
-          );
-          console.log(
-            "→ Collega con numero di telefono"
-          );
-          console.log(
-            "======================================"
-          );
-          console.log("");
-
-        } catch (error) {
-          console.error(
-            "❌ Errore pairing code:"
-          );
-          console.error(error);
-
-          pairingRequested = false;
-        }
+        return;
       }
 
-      /*
-       * =====================================
-       * CONNESSO
-       * =====================================
-       */
+      console.log(
+        "🔄 Riconnessione tra 5 secondi..."
+      );
 
-      if (connection === "open") {
-        console.log("");
+      pairingCodeRequested = false;
+
+      setTimeout(() => {
+        startWhatsApp();
+      }, 5000);
+    }
+  });
+
+  // ==========================================
+  // MESSAGGI
+  // ==========================================
+
+  sock.ev.on(
+    "messages.upsert",
+    async ({ messages }) => {
+      try {
+        const message = messages[0];
+
+        if (!message) return;
+        if (!message.message) return;
+        if (message.key.fromMe) return;
+
+        const text =
+          message.message.conversation ||
+          message.message.extendedTextMessage?.text ||
+          "";
+
+        if (!text) return;
+
+        const chat = message.key.remoteJid;
+
         console.log(
-          "======================================"
-        );
-        console.log(
-          "       ✅ WHATSAPP COLLEGATO"
-        );
-        console.log(
-          "======================================"
-        );
-        console.log(
-          "🤖 Bot online!"
-        );
-        console.log("");
-
-        pairingRequested = true;
-      }
-
-      /*
-       * =====================================
-       * DISCONNESSO
-       * =====================================
-       */
-
-      if (connection === "close") {
-        const statusCode =
-          lastDisconnect?.error?.output?.statusCode;
-
-        console.log(
-          "❌ Connessione chiusa:",
-          statusCode
+          `📩 Messaggio ricevuto: ${text}`
         );
 
+        // CIAO
         if (
-          statusCode === DisconnectReason.loggedOut
+          text.trim().toLowerCase() === "ciao"
         ) {
-          console.log(
-            "❌ Sessione WhatsApp terminata."
-          );
-          return;
+          await sock.sendMessage(chat, {
+            text:
+              "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
+          });
         }
 
-        if (reconnectTimer) {
-          return;
+        // PING
+        if (
+          text.trim().toLowerCase() === "!ping"
+        ) {
+          await sock.sendMessage(chat, {
+            text: "🏓 Pong!"
+          });
         }
 
-        console.log(
-          "🔄 Riconnessione tra 5 secondi..."
+        // INFO
+        if (
+          text.trim().toLowerCase() === "!info"
+        ) {
+          await sock.sendMessage(chat, {
+            text:
+              "🤖 Davide WhatsApp Bot\n\n" +
+              "🟢 Stato: Online\n" +
+              "⚡ Powered by Baileys"
+          });
+        }
+
+      } catch (error) {
+        console.error(
+          "❌ Errore gestione messaggio:"
         );
 
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          pairingRequested = false;
-          startWhatsApp();
-        }, 5000);
+        console.error(error);
       }
-    });
-
-    /*
-     * =====================================
-     * MESSAGGI
-     * =====================================
-     */
-
-    sock.ev.on(
-      "messages.upsert",
-      async ({ messages }) => {
-        try {
-          const message = messages[0];
-
-          if (!message) return;
-          if (!message.message) return;
-          if (message.key.fromMe) return;
-
-          const text =
-            message.message.conversation ||
-            message.message.extendedTextMessage?.text ||
-            "";
-
-          if (!text) return;
-
-          console.log(
-            "📩 Messaggio:",
-            text
-          );
-
-          const chat =
-            message.key.remoteJid;
-
-          /*
-           * CIAO
-           */
-
-          if (
-            text.trim().toLowerCase() === "ciao"
-          ) {
-            await sock.sendMessage(chat, {
-              text:
-                "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
-            });
-          }
-
-          /*
-           * PING
-           */
-
-          if (
-            text.trim().toLowerCase() === "!ping"
-          ) {
-            await sock.sendMessage(chat, {
-              text: "🏓 Pong!"
-            });
-          }
-
-          /*
-           * INFO
-           */
-
-          if (
-            text.trim().toLowerCase() === "!info"
-          ) {
-            await sock.sendMessage(chat, {
-              text:
-                "🤖 Davide WhatsApp Bot\n\n" +
-                "✅ Online\n" +
-                "✅ WhatsApp collegato"
-            });
-          }
-
-        } catch (error) {
-          console.error(
-            "❌ Errore messaggio:",
-            error
-          );
-        }
-      }
-    );
-
-  } catch (error) {
-    console.error(
-      "❌ Errore avvio WhatsApp:"
-    );
-    console.error(error);
-
-    setTimeout(() => {
-      startWhatsApp();
-    }, 5000);
-  }
+    }
+  );
 }
 
-console.log("");
-console.log(
-  "======================================"
-);
-console.log(
-  "      🤖 DAVIDE WHATSAPP BOT"
-);
-console.log(
-  "======================================"
-);
-console.log("");
-
-startWhatsApp();
+module.exports = startWhatsApp;
