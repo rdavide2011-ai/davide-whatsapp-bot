@@ -1,13 +1,13 @@
 {
   "name": "whatsapp-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Davide WhatsApp Bot",
+  "main": "whatsapp.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node whatsapp.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Davide",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
