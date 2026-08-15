@@ -10,38 +10,40 @@ const P = require("pino");
 const AUTH_FOLDER = "./auth_info";
 
 let currentQR = null;
-
-let socket = null;
+let starting = false;
 
 function getQR() {
   return currentQR;
 }
 
 async function startWhatsApp() {
-  console.log("📱 Avvio WhatsApp...");
+  if (starting) return;
 
-  const { state, saveCreds } =
-    await useMultiFileAuthState(AUTH_FOLDER);
+  starting = true;
 
-  socket = makeWASocket({
-    auth: state,
+  try {
+    console.log("📱 Avvio WhatsApp...");
 
-    logger: P({
-      level: "silent"
-    }),
+    const { state, saveCreds } =
+      await useMultiFileAuthState(AUTH_FOLDER);
 
-    browser: Browsers.macOS("Google Chrome"),
+    const sock = makeWASocket({
+      auth: state,
 
-    printQRInTerminal: false,
+      logger: P({
+        level: "silent"
+      }),
 
-    markOnlineOnConnect: false
-  });
+      browser: Browsers.macOS("Google Chrome"),
 
-  socket.ev.on("creds.update", saveCreds);
+      printQRInTerminal: false,
 
-  socket.ev.on(
-    "connection.update",
-    async (update) => {
+      markOnlineOnConnect: false
+    });
+
+    sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", async (update) => {
       const {
         connection,
         lastDisconnect,
@@ -54,23 +56,23 @@ async function startWhatsApp() {
       );
 
       // ==========================================
-      // NUOVO QR CODE
+      // QR CODE
       // ==========================================
 
       if (qr) {
         currentQR = qr;
 
         console.log(
-          "📷 Nuovo QR Code WhatsApp disponibile!"
+          "📷 QR Code WhatsApp disponibile."
         );
 
         console.log(
-          "🌐 Apri la pagina /qr per scansionarlo."
+          "🌐 Apri la pagina del bot per scansionarlo."
         );
       }
 
       // ==========================================
-      // CONNESSIONE RIUSCITA
+      // WHATSAPP COLLEGATO
       // ==========================================
 
       if (connection === "open") {
@@ -78,15 +80,17 @@ async function startWhatsApp() {
 
         console.log("");
         console.log(
-          "======================================"
+          "=========================================="
         );
         console.log(
           "       ✅ WHATSAPP COLLEGATO"
         );
         console.log(
-          "======================================"
+          "=========================================="
         );
         console.log("");
+
+        starting = false;
       }
 
       // ==========================================
@@ -100,8 +104,11 @@ async function startWhatsApp() {
           lastDisconnect?.error?.output?.statusCode;
 
         console.log(
-          `❌ Connessione chiusa: ${statusCode}`
+          "❌ Connessione WhatsApp chiusa:",
+          statusCode
         );
+
+        starting = false;
 
         if (
           statusCode === DisconnectReason.loggedOut
@@ -121,76 +128,90 @@ async function startWhatsApp() {
           startWhatsApp();
         }, 5000);
       }
-    }
-  );
+    });
 
-  // ==========================================
-  // MESSAGGI
-  // ==========================================
+    // ==========================================
+    // MESSAGGI
+    // ==========================================
 
-  socket.ev.on(
-    "messages.upsert",
-    async ({ messages }) => {
-      try {
-        const message = messages[0];
+    sock.ev.on(
+      "messages.upsert",
+      async ({ messages }) => {
+        try {
+          const message = messages[0];
 
-        if (!message) return;
+          if (!message) return;
+          if (!message.message) return;
+          if (message.key.fromMe) return;
 
-        if (!message.message) return;
+          const text =
+            message.message.conversation ||
+            message.message.extendedTextMessage?.text ||
+            "";
 
-        if (message.key.fromMe) return;
+          if (!text) return;
 
-        const text =
-          message.message.conversation ||
-          message.message.extendedTextMessage?.text ||
-          "";
+          const chat =
+            message.key.remoteJid;
 
-        if (!text) return;
+          console.log(
+            `📩 Messaggio ricevuto: ${text}`
+          );
 
-        const chat =
-          message.key.remoteJid;
+          // CIAO
+          if (
+            text.trim().toLowerCase() === "ciao"
+          ) {
+            await sock.sendMessage(chat, {
+              text:
+                "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
+            });
+          }
 
-        console.log(
-          `📩 Messaggio ricevuto: ${text}`
-        );
+          // PING
+          if (
+            text.trim().toLowerCase() === "!ping"
+          ) {
+            await sock.sendMessage(chat, {
+              text: "🏓 Pong!"
+            });
+          }
 
-        if (
-          text.trim().toLowerCase() === "ciao"
-        ) {
-          await socket.sendMessage(chat, {
-            text:
-              "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
-          });
+          // INFO
+          if (
+            text.trim().toLowerCase() === "!info"
+          ) {
+            await sock.sendMessage(chat, {
+              text:
+                "🤖 Davide WhatsApp Bot\n\n" +
+                "🟢 Stato: Online\n" +
+                "⚡ Powered by Baileys"
+            });
+          }
+
+        } catch (error) {
+          console.error(
+            "❌ Errore gestione messaggio:"
+          );
+
+          console.error(error);
         }
-
-        if (
-          text.trim().toLowerCase() === "!ping"
-        ) {
-          await socket.sendMessage(chat, {
-            text: "🏓 Pong!"
-          });
-        }
-
-        if (
-          text.trim().toLowerCase() === "!info"
-        ) {
-          await socket.sendMessage(chat, {
-            text:
-              "🤖 Davide WhatsApp Bot\n\n" +
-              "🟢 Stato: Online\n" +
-              "⚡ Powered by Baileys"
-          });
-        }
-
-      } catch (error) {
-        console.error(
-          "❌ Errore gestione messaggio:"
-        );
-
-        console.error(error);
       }
-    }
-  );
+    );
+
+  } catch (error) {
+    console.error(
+      "❌ Errore avvio WhatsApp:"
+    );
+
+    console.error(error);
+
+    starting = false;
+
+    setTimeout(() => {
+      startWhatsApp();
+    }, 5000);
+  }
 }
 
 module.exports = {
