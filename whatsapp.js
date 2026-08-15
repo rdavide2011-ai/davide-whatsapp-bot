@@ -9,7 +9,13 @@ const P = require("pino");
 
 const AUTH_FOLDER = "./auth_info";
 
-let pairingCodeRequested = false;
+let currentQR = null;
+
+let socket = null;
+
+function getQR() {
+  return currentQR;
+}
 
 async function startWhatsApp() {
   console.log("📱 Avvio WhatsApp...");
@@ -17,15 +23,13 @@ async function startWhatsApp() {
   const { state, saveCreds } =
     await useMultiFileAuthState(AUTH_FOLDER);
 
-  const sock = makeWASocket({
+  socket = makeWASocket({
     auth: state,
 
     logger: P({
       level: "silent"
     }),
 
-    // Browser emulato dal server.
-    // NON dipende dal Chrome del tuo PC.
     browser: Browsers.macOS("Google Chrome"),
 
     printQRInTerminal: false,
@@ -33,191 +37,98 @@ async function startWhatsApp() {
     markOnlineOnConnect: false
   });
 
-  sock.ev.on("creds.update", saveCreds);
+  socket.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", async (update) => {
-    const {
-      connection,
-      lastDisconnect,
-      qr
-    } = update;
+  socket.ev.on(
+    "connection.update",
+    async (update) => {
+      const {
+        connection,
+        lastDisconnect,
+        qr
+      } = update;
 
-    console.log(
-      "📡 Stato WhatsApp:",
-      connection || "waiting"
-    );
+      console.log(
+        "📡 Stato WhatsApp:",
+        connection || "waiting"
+      );
 
-    // ==========================================
-    // RICHIESTA CODICE DI COLLEGAMENTO
-    // ==========================================
+      // ==========================================
+      // NUOVO QR CODE
+      // ==========================================
 
-    if (
-      !state.creds.registered &&
-      !pairingCodeRequested &&
-      (connection === "connecting" || qr)
-    ) {
-      pairingCodeRequested = true;
+      if (qr) {
+        currentQR = qr;
 
-      const number = process.env.WHATSAPP_NUMBER;
-
-      if (!number) {
-        console.error("");
-        console.error("❌ WHATSAPP_NUMBER NON CONFIGURATO");
-        console.error("");
-        return;
-      }
-
-      const cleanNumber = number.replace(/\D/g, "");
-
-      console.log("");
-      console.log("📱 Numero utilizzato:");
-      console.log(cleanNumber);
-      console.log("");
-      console.log("⏳ Connessione ai server WhatsApp...");
-      console.log("");
-
-      try {
-        await new Promise((resolve) =>
-          setTimeout(resolve, 5000)
+        console.log(
+          "📷 Nuovo QR Code WhatsApp disponibile!"
         );
 
         console.log(
-          "📲 Richiesta codice WhatsApp..."
+          "🌐 Apri la pagina /qr per scansionarlo."
+        );
+      }
+
+      // ==========================================
+      // CONNESSIONE RIUSCITA
+      // ==========================================
+
+      if (connection === "open") {
+        currentQR = null;
+
+        console.log("");
+        console.log(
+          "======================================"
+        );
+        console.log(
+          "       ✅ WHATSAPP COLLEGATO"
+        );
+        console.log(
+          "======================================"
+        );
+        console.log("");
+      }
+
+      // ==========================================
+      // CONNESSIONE CHIUSA
+      // ==========================================
+
+      if (connection === "close") {
+        currentQR = null;
+
+        const statusCode =
+          lastDisconnect?.error?.output?.statusCode;
+
+        console.log(
+          `❌ Connessione chiusa: ${statusCode}`
         );
 
-        const code =
-          await sock.requestPairingCode(
-            cleanNumber
+        if (
+          statusCode === DisconnectReason.loggedOut
+        ) {
+          console.log(
+            "🚪 WhatsApp ha effettuato il logout."
           );
 
-        console.log("");
-        console.log(
-          "=========================================="
-        );
-        console.log(
-          "          🔐 CODICE WHATSAPP"
-        );
-        console.log(
-          "=========================================="
-        );
-        console.log("");
-        console.log(
-          `              ${code}`
-        );
-        console.log("");
-        console.log(
-          "=========================================="
-        );
-        console.log("");
-        console.log(
-          "📱 SULL'IPHONE:"
-        );
-        console.log("");
-        console.log(
-          "WhatsApp"
-        );
-        console.log(
-          "→ Impostazioni"
-        );
-        console.log(
-          "→ Dispositivi collegati"
-        );
-        console.log(
-          "→ Collega un dispositivo"
-        );
-        console.log(
-          "→ Collega con numero di telefono"
-        );
-        console.log("");
-        console.log(
-          `🔑 Inserisci: ${code}`
-        );
-        console.log("");
-        console.log(
-          "=========================================="
-        );
-        console.log("");
+          return;
+        }
 
-      } catch (error) {
-        console.error("");
-        console.error(
-          "❌ ERRORE GENERAZIONE CODICE"
+        console.log(
+          "🔄 Riconnessione tra 5 secondi..."
         );
-        console.error("");
 
-        console.error(error);
-
-        console.error("");
-
-        pairingCodeRequested = false;
+        setTimeout(() => {
+          startWhatsApp();
+        }, 5000);
       }
     }
-
-    // ==========================================
-    // WHATSAPP COLLEGATO
-    // ==========================================
-
-    if (connection === "open") {
-      console.log("");
-      console.log(
-        "=========================================="
-      );
-      console.log(
-        "       ✅ WHATSAPP COLLEGATO!"
-      );
-      console.log(
-        "=========================================="
-      );
-      console.log("");
-
-      pairingCodeRequested = true;
-    }
-
-    // ==========================================
-    // CONNESSIONE CHIUSA
-    // ==========================================
-
-    if (connection === "close") {
-      const statusCode =
-        lastDisconnect?.error?.output?.statusCode;
-
-      console.log("");
-      console.log(
-        `❌ Connessione WhatsApp chiusa: ${statusCode}`
-      );
-
-      console.log(
-        "Errore completo:",
-        lastDisconnect?.error
-      );
-
-      if (
-        statusCode === DisconnectReason.loggedOut
-      ) {
-        console.log(
-          "🚪 Sessione WhatsApp disconnessa."
-        );
-
-        return;
-      }
-
-      console.log(
-        "🔄 Riconnessione tra 5 secondi..."
-      );
-
-      pairingCodeRequested = false;
-
-      setTimeout(() => {
-        startWhatsApp();
-      }, 5000);
-    }
-  });
+  );
 
   // ==========================================
   // MESSAGGI
   // ==========================================
 
-  sock.ev.on(
+  socket.ev.on(
     "messages.upsert",
     async ({ messages }) => {
       try {
@@ -243,39 +154,27 @@ async function startWhatsApp() {
           `📩 Messaggio ricevuto: ${text}`
         );
 
-        // ======================================
-        // CIAO
-        // ======================================
-
         if (
           text.trim().toLowerCase() === "ciao"
         ) {
-          await sock.sendMessage(chat, {
+          await socket.sendMessage(chat, {
             text:
               "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
           });
         }
 
-        // ======================================
-        // PING
-        // ======================================
-
         if (
           text.trim().toLowerCase() === "!ping"
         ) {
-          await sock.sendMessage(chat, {
+          await socket.sendMessage(chat, {
             text: "🏓 Pong!"
           });
         }
 
-        // ======================================
-        // INFO
-        // ======================================
-
         if (
           text.trim().toLowerCase() === "!info"
         ) {
-          await sock.sendMessage(chat, {
+          await socket.sendMessage(chat, {
             text:
               "🤖 Davide WhatsApp Bot\n\n" +
               "🟢 Stato: Online\n" +
@@ -294,4 +193,7 @@ async function startWhatsApp() {
   );
 }
 
-module.exports = startWhatsApp;
+module.exports = {
+  startWhatsApp,
+  getQR
+};
