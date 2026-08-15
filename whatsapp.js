@@ -24,6 +24,8 @@ async function startWhatsApp() {
       level: "silent"
     }),
 
+    // Browser emulato dal server.
+    // NON dipende dal Chrome del tuo PC.
     browser: Browsers.macOS("Google Chrome"),
 
     printQRInTerminal: false,
@@ -46,7 +48,7 @@ async function startWhatsApp() {
     );
 
     // ==========================================
-    // CODICE DI COLLEGAMENTO
+    // RICHIESTA CODICE DI COLLEGAMENTO
     // ==========================================
 
     if (
@@ -60,10 +62,7 @@ async function startWhatsApp() {
 
       if (!number) {
         console.error("");
-        console.error("❌ ERRORE");
-        console.error(
-          "Manca la variabile WHATSAPP_NUMBER su Railway."
-        );
+        console.error("❌ WHATSAPP_NUMBER NON CONFIGURATO");
         console.error("");
         return;
       }
@@ -71,46 +70,83 @@ async function startWhatsApp() {
       const cleanNumber = number.replace(/\D/g, "");
 
       console.log("");
-      console.log("⏳ Preparazione collegamento WhatsApp...");
-      console.log(`📱 Numero: ${cleanNumber}`);
+      console.log("📱 Numero utilizzato:");
+      console.log(cleanNumber);
+      console.log("");
+      console.log("⏳ Connessione ai server WhatsApp...");
       console.log("");
 
       try {
         await new Promise((resolve) =>
-          setTimeout(resolve, 3000)
+          setTimeout(resolve, 5000)
         );
 
-        console.log("📲 Richiesta codice WhatsApp...");
+        console.log(
+          "📲 Richiesta codice WhatsApp..."
+        );
 
         const code =
-          await sock.requestPairingCode(cleanNumber);
+          await sock.requestPairingCode(
+            cleanNumber
+          );
 
         console.log("");
-        console.log("==========================================");
-        console.log("       🔐 CODICE WHATSAPP");
-        console.log("==========================================");
+        console.log(
+          "=========================================="
+        );
+        console.log(
+          "          🔐 CODICE WHATSAPP"
+        );
+        console.log(
+          "=========================================="
+        );
         console.log("");
-        console.log(`              ${code}`);
+        console.log(
+          `              ${code}`
+        );
         console.log("");
-        console.log("==========================================");
-        console.log("Sul telefono:");
+        console.log(
+          "=========================================="
+        );
         console.log("");
-        console.log("WhatsApp");
-        console.log("→ Impostazioni");
-        console.log("→ Dispositivi collegati");
-        console.log("→ Collega un dispositivo");
-        console.log("→ Collega con numero di telefono");
+        console.log(
+          "📱 SULL'IPHONE:"
+        );
         console.log("");
-        console.log("Inserisci il codice:");
-        console.log(`              ${code}`);
+        console.log(
+          "WhatsApp"
+        );
+        console.log(
+          "→ Impostazioni"
+        );
+        console.log(
+          "→ Dispositivi collegati"
+        );
+        console.log(
+          "→ Collega un dispositivo"
+        );
+        console.log(
+          "→ Collega con numero di telefono"
+        );
         console.log("");
-        console.log("==========================================");
+        console.log(
+          `🔑 Inserisci: ${code}`
+        );
+        console.log("");
+        console.log(
+          "=========================================="
+        );
         console.log("");
 
       } catch (error) {
         console.error("");
-        console.error("❌ ERRORE GENERAZIONE CODICE");
+        console.error(
+          "❌ ERRORE GENERAZIONE CODICE"
+        );
+        console.error("");
+
         console.error(error);
+
         console.error("");
 
         pairingCodeRequested = false;
@@ -118,14 +154,20 @@ async function startWhatsApp() {
     }
 
     // ==========================================
-    // CONNESSIONE RIUSCITA
+    // WHATSAPP COLLEGATO
     // ==========================================
 
     if (connection === "open") {
       console.log("");
-      console.log("==========================================");
-      console.log("       ✅ WHATSAPP COLLEGATO");
-      console.log("==========================================");
+      console.log(
+        "=========================================="
+      );
+      console.log(
+        "       ✅ WHATSAPP COLLEGATO!"
+      );
+      console.log(
+        "=========================================="
+      );
       console.log("");
 
       pairingCodeRequested = true;
@@ -141,15 +183,21 @@ async function startWhatsApp() {
 
       console.log("");
       console.log(
-        `❌ Connessione chiusa: ${statusCode}`
+        `❌ Connessione WhatsApp chiusa: ${statusCode}`
+      );
+
+      console.log(
+        "Errore completo:",
+        lastDisconnect?.error
       );
 
       if (
         statusCode === DisconnectReason.loggedOut
       ) {
         console.log(
-          "🚪 WhatsApp ha effettuato il logout."
+          "🚪 Sessione WhatsApp disconnessa."
         );
+
         return;
       }
 
@@ -176,7 +224,9 @@ async function startWhatsApp() {
         const message = messages[0];
 
         if (!message) return;
+
         if (!message.message) return;
+
         if (message.key.fromMe) return;
 
         const text =
@@ -186,13 +236,17 @@ async function startWhatsApp() {
 
         if (!text) return;
 
-        const chat = message.key.remoteJid;
+        const chat =
+          message.key.remoteJid;
 
         console.log(
           `📩 Messaggio ricevuto: ${text}`
         );
 
+        // ======================================
         // CIAO
+        // ======================================
+
         if (
           text.trim().toLowerCase() === "ciao"
         ) {
@@ -202,7 +256,10 @@ async function startWhatsApp() {
           });
         }
 
+        // ======================================
         // PING
+        // ======================================
+
         if (
           text.trim().toLowerCase() === "!ping"
         ) {
@@ -211,7 +268,10 @@ async function startWhatsApp() {
           });
         }
 
+        // ======================================
         // INFO
+        // ======================================
+
         if (
           text.trim().toLowerCase() === "!info"
         ) {
