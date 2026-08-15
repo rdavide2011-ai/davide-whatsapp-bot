@@ -1,26 +1,23 @@
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  DisconnectReason
+  DisconnectReason,
+  Browsers
 } = require("@whiskeysockets/baileys");
-
-const fs = require("fs");
 
 const AUTH_DIR = "./auth_info";
 
+let reconnectTimer = null;
+let pairingRequested = false;
+
 async function startWhatsApp() {
   try {
-    if (!fs.existsSync(AUTH_DIR)) {
-      fs.mkdirSync(AUTH_DIR, {
-        recursive: true
-      });
-    }
-
     const { state, saveCreds } =
       await useMultiFileAuthState(AUTH_DIR);
 
     const sock = makeWASocket({
       auth: state,
+      browser: Browsers.ubuntu("Davide WhatsApp Bot"),
       printQRInTerminal: false,
       markOnlineOnConnect: false
     });
@@ -30,31 +27,58 @@ async function startWhatsApp() {
     sock.ev.on("connection.update", async (update) => {
       const {
         connection,
-        lastDisconnect
+        lastDisconnect,
+        qr
       } = update;
 
-      if (connection === "connecting") {
-        console.log("🔄 Connessione a WhatsApp...");
-      }
+      console.log(
+        "📡 Stato WhatsApp:",
+        connection || "waiting"
+      );
+
+      /*
+       * =====================================
+       * PAIRING CODE
+       * =====================================
+       */
 
       if (
         !state.creds.registered &&
-        connection === "connecting"
+        !pairingRequested &&
+        (connection === "connecting" || qr)
       ) {
+        pairingRequested = true;
+
+        console.log(
+          "⏳ Connessione iniziale rilevata."
+        );
+
+        // Aspettiamo che il socket sia realmente pronto.
+        await new Promise(resolve =>
+          setTimeout(resolve, 5000)
+        );
+
         const phoneNumber =
           process.env.WHATSAPP_NUMBER;
 
         if (!phoneNumber) {
-          console.log(
-            "❌ ERRORE: manca WHATSAPP_NUMBER nelle variabili Railway."
+          console.error(
+            "❌ WHATSAPP_NUMBER non configurato."
           );
           return;
         }
 
         try {
+          const cleanNumber =
+            phoneNumber.replace(/\D/g, "");
+
+          console.log(
+            "📱 Richiedo il codice WhatsApp..."
+          );
+
           const code =
             await sock.requestPairingCode(
-              phoneNumber.replace(/\D/g, "")
+              cleanNumber
             );
 
           console.log("");
@@ -68,10 +92,15 @@ async function startWhatsApp() {
             "======================================"
           );
           console.log("");
-          console.log(`       ${code}`);
+          console.log(
+            "       " + code
+          );
           console.log("");
           console.log(
             "======================================"
+          );
+          console.log(
+            "Sul telefono:"
           );
           console.log(
             "WhatsApp → Impostazioni"
@@ -89,13 +118,22 @@ async function startWhatsApp() {
             "======================================"
           );
           console.log("");
+
         } catch (error) {
           console.error(
-            "❌ Errore generazione codice:"
+            "❌ Errore pairing code:"
           );
           console.error(error);
+
+          pairingRequested = false;
         }
       }
+
+      /*
+       * =====================================
+       * CONNESSO
+       * =====================================
+       */
 
       if (connection === "open") {
         console.log("");
@@ -108,17 +146,23 @@ async function startWhatsApp() {
         console.log(
           "======================================"
         );
-        console.log("");
         console.log(
-          "🤖 Bot online e funzionante."
+          "🤖 Bot online!"
         );
         console.log("");
+
+        pairingRequested = true;
       }
+
+      /*
+       * =====================================
+       * DISCONNESSO
+       * =====================================
+       */
 
       if (connection === "close") {
         const statusCode =
-          lastDisconnect?.error?.output
-            ?.statusCode;
+          lastDisconnect?.error?.output?.statusCode;
 
         console.log(
           "❌ Connessione chiusa:",
@@ -126,23 +170,35 @@ async function startWhatsApp() {
         );
 
         if (
-          statusCode !==
-          DisconnectReason.loggedOut
+          statusCode === DisconnectReason.loggedOut
         ) {
           console.log(
-            "🔄 Riconnessione tra 5 secondi..."
+            "❌ Sessione WhatsApp terminata."
           );
-
-          setTimeout(() => {
-            startWhatsApp();
-          }, 5000);
-        } else {
-          console.log(
-            "❌ WhatsApp ha effettuato il logout."
-          );
+          return;
         }
+
+        if (reconnectTimer) {
+          return;
+        }
+
+        console.log(
+          "🔄 Riconnessione tra 5 secondi..."
+        );
+
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          pairingRequested = false;
+          startWhatsApp();
+        }, 5000);
       }
     });
+
+    /*
+     * =====================================
+     * MESSAGGI
+     * =====================================
+     */
 
     sock.ev.on(
       "messages.upsert",
@@ -156,22 +212,25 @@ async function startWhatsApp() {
 
           const text =
             message.message.conversation ||
-            message.message.extendedTextMessage
-              ?.text ||
+            message.message.extendedTextMessage?.text ||
             "";
 
           if (!text) return;
 
           console.log(
-            `📩 Messaggio ricevuto: ${text}`
+            "📩 Messaggio:",
+            text
           );
 
           const chat =
             message.key.remoteJid;
 
+          /*
+           * CIAO
+           */
+
           if (
-            text.trim().toLowerCase() ===
-            "ciao"
+            text.trim().toLowerCase() === "ciao"
           ) {
             await sock.sendMessage(chat, {
               text:
@@ -179,26 +238,33 @@ async function startWhatsApp() {
             });
           }
 
+          /*
+           * PING
+           */
+
           if (
-            text.trim().toLowerCase() ===
-            "!ping"
+            text.trim().toLowerCase() === "!ping"
           ) {
             await sock.sendMessage(chat, {
               text: "🏓 Pong!"
             });
           }
 
+          /*
+           * INFO
+           */
+
           if (
-            text.trim().toLowerCase() ===
-            "!info"
+            text.trim().toLowerCase() === "!info"
           ) {
             await sock.sendMessage(chat, {
               text:
                 "🤖 Davide WhatsApp Bot\n\n" +
-                "✅ Bot online\n" +
+                "✅ Online\n" +
                 "✅ WhatsApp collegato"
             });
           }
+
         } catch (error) {
           console.error(
             "❌ Errore messaggio:",
@@ -220,8 +286,16 @@ async function startWhatsApp() {
   }
 }
 
+console.log("");
 console.log(
-  "🤖 Avvio Davide WhatsApp Bot..."
+  "======================================"
 );
+console.log(
+  "      🤖 DAVIDE WHATSAPP BOT"
+);
+console.log(
+  "======================================"
+);
+console.log("");
 
 startWhatsApp();
