@@ -1,99 +1,124 @@
-const { Client, LocalAuth } = require("whatsapp-web.js");
-const qrcode = require("qrcode-terminal");
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  Browsers
+} = require("@whiskeysockets/baileys");
 
-const client = new Client({
-    authStrategy: new LocalAuth({
-        dataPath: "./whatsapp_session"
-    }),
-    puppeteer: {
-        headless: true,
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox"
-        ]
-    }
+const express = require("express");
+const fs = require("fs");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("🤖 WhatsApp Bot online");
 });
 
-client.on("qr", (qr) => {
-    console.log("");
-    console.log("================================");
-    console.log("📱 SCANSIONA QUESTO QR CODE");
-    console.log("================================");
-    console.log("");
-
-    qrcode.generate(qr, {
-        small: true
-    });
-
-    console.log("");
+app.listen(PORT, () => {
+  console.log(`🌐 Server avviato sulla porta ${PORT}`);
 });
 
-client.on("ready", () => {
-    console.log("");
-    console.log("================================");
-    console.log("🤖 WHATSAPP BOT COLLEGATO!");
-    console.log("================================");
-    console.log("");
-});
+async function startWhatsApp() {
+  const { state, saveCreds } =
+    await useMultiFileAuthState("./auth_info");
 
-client.on("authenticated", () => {
-    console.log("🔐 WhatsApp autenticato.");
-});
+  const sock = makeWASocket({
+    auth: state,
+    browser: Browsers.ubuntu("Davide WhatsApp Bot"),
+    printQRInTerminal: false,
+    markOnlineOnConnect: false
+  });
 
-client.on("auth_failure", (message) => {
-    console.log("❌ Errore di autenticazione:");
-    console.log(message);
-});
+  sock.ev.on("creds.update", saveCreds);
 
-client.on("disconnected", (reason) => {
-    console.log("❌ WhatsApp disconnesso:");
-    console.log(reason);
-});
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect } = update;
 
-client.on("message", async (message) => {
-
-    const text = message.body.toLowerCase().trim();
-
-    console.log("📩 Messaggio ricevuto:", message.body);
-
-    if (text === "ciao") {
-
-        await message.reply(
-            "👋 Ciao! Sono il tuo primo WhatsApp Bot 🤖"
-        );
-
-    } else if (text === "menu") {
-
-        await message.reply(
-            "🤖 MENU\n\n" +
-            "1️⃣ Prodotti\n" +
-            "2️⃣ Contatti\n" +
-            "3️⃣ Stato bot\n\n" +
-            "Scrivi il numero dell'opzione."
-        );
-
-    } else if (text === "1") {
-
-        await message.reply(
-            "📦 PRODOTTI\n\n" +
-            "Presto qui inseriremo i prodotti."
-        );
-
-    } else if (text === "2") {
-
-        await message.reply(
-            "📞 CONTATTI\n\n" +
-            "Presto qui inseriremo i contatti."
-        );
-
-    } else if (text === "3") {
-
-        await message.reply(
-            "🟢 BOT ONLINE!"
-        );
-
+    if (connection === "connecting") {
+      console.log("🔄 Connessione a WhatsApp...");
     }
 
-});
+    if (connection === "open") {
+      console.log("✅ WHATSAPP COLLEGATO!");
+      console.log("🤖 Bot online e funzionante.");
+    }
 
-client.initialize();
+    if (connection === "close") {
+      const statusCode =
+        lastDisconnect?.error?.output?.statusCode;
+
+      console.log("❌ Connessione chiusa:", statusCode);
+
+      if (statusCode !== DisconnectReason.loggedOut) {
+        console.log("🔄 Riconnessione...");
+        setTimeout(startWhatsApp, 3000);
+      } else {
+        console.log("❌ WhatsApp scollegato. Devi effettuare nuovamente il pairing.");
+      }
+    }
+
+    // PAIRING CODE
+    if (
+      !state.creds.registered &&
+      (connection === "connecting" || update.qr)
+    ) {
+      const phoneNumber = process.env.WHATSAPP_NUMBER;
+
+      if (!phoneNumber) {
+        console.error(
+          "❌ Manca la variabile WHATSAPP_NUMBER nelle Variables di Railway."
+        );
+        return;
+      }
+
+      try {
+        const code = await sock.requestPairingCode(phoneNumber);
+
+        console.log("");
+        console.log("====================================");
+        console.log("       🔐 WHATSAPP PAIRING CODE");
+        console.log("====================================");
+        console.log("");
+        console.log(`       ${code}`);
+        console.log("");
+        console.log("====================================");
+        console.log("📱 WhatsApp → Impostazioni");
+        console.log("→ Dispositivi collegati");
+        console.log("→ Collega un dispositivo");
+        console.log("→ Collega con numero di telefono");
+        console.log("====================================");
+        console.log("");
+      } catch (error) {
+        console.error("❌ Errore pairing:", error);
+      }
+    }
+  });
+
+  // Esempio risposta ai messaggi
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    const msg = messages[0];
+
+    if (!msg || !msg.message) return;
+    if (msg.key.fromMe) return;
+
+    const text =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      "";
+
+    console.log(
+      `📩 Messaggio ricevuto: ${text}`
+    );
+
+    if (text.toLowerCase() === "ciao") {
+      await sock.sendMessage(msg.key.remoteJid, {
+        text: "Ciao! 👋 Sono il bot di Davide 🤖"
+      });
+    }
+  });
+}
+
+startWhatsApp().catch((error) => {
+  console.error("❌ ERRORE FATALE:", error);
+});
