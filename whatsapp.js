@@ -50,8 +50,7 @@ function getButtonId(message) {
     message.interactiveResponseMessage;
 
   if (
-    response?.nativeFlowResponseMessage
-      ?.paramsJson
+    response?.nativeFlowResponseMessage?.paramsJson
   ) {
     try {
       const params = JSON.parse(
@@ -63,6 +62,7 @@ function getButtonId(message) {
         params.selected_id ||
         ""
       );
+
     } catch (error) {
       console.log(
         "⚠️ Errore lettura risposta pulsante:",
@@ -71,18 +71,15 @@ function getButtonId(message) {
     }
   }
 
-  // Formati precedenti
   return (
-    message.buttonsResponseMessage
-      ?.selectedButtonId ||
-    message.templateButtonReplyMessage
-      ?.selectedId ||
+    message.buttonsResponseMessage?.selectedButtonId ||
+    message.templateButtonReplyMessage?.selectedId ||
     ""
   );
 }
 
 // ======================================================
-// PRIVACY MODE TIMESTAMP
+// TIMESTAMP PRIVACY
 // ======================================================
 
 function getPrivacyModeTs() {
@@ -95,23 +92,20 @@ function getPrivacyModeTs() {
 }
 
 // ======================================================
-// BIZ NODE PER NATIVE FLOW
+// BIZ NODE
 // ======================================================
 
 function buildMixedNativeFlowBizNode() {
-
   return {
     tag: "biz",
 
     attrs: {
       actual_actors: "2",
       host_storage: "2",
-      privacy_mode_ts:
-        getPrivacyModeTs()
+      privacy_mode_ts: getPrivacyModeTs()
     },
 
     content: [
-
       {
         tag: "interactive",
 
@@ -121,7 +115,6 @@ function buildMixedNativeFlowBizNode() {
         },
 
         content: [
-
           {
             tag: "native_flow",
 
@@ -130,7 +123,6 @@ function buildMixedNativeFlowBizNode() {
               name: "mixed"
             }
           }
-
         ]
       },
 
@@ -141,48 +133,40 @@ function buildMixedNativeFlowBizNode() {
           source_type: "third_party"
         }
       }
-
     ]
   };
 }
 
 // ======================================================
-// INVIA MESSAGGIO CON VERO PULSANTE WHATSAPP
+// CREA PULSANTE NATIVE FLOW
 // ======================================================
 
-async function sendWelcomeWithButton(
-  sock,
-  jid
-) {
-
-  console.log(
-    "📤 Creazione messaggio interattivo..."
-  );
-
-  // ------------------------------------------
-  // PULSANTE
-  // ------------------------------------------
-
-  const button = {
-
+function createQuickReplyButton(displayText, id) {
+  return {
     name: "quick_reply",
 
-    buttonParamsJson:
-      JSON.stringify({
-
-        display_text:
-          "/comandi",
-
-        id:
-          "/comandi"
-
-      })
-
+    buttonParamsJson: JSON.stringify({
+      display_text: displayText,
+      id: id
+    })
   };
+}
 
-  // ------------------------------------------
-  // INTERACTIVE MESSAGE
-  // ------------------------------------------
+// ======================================================
+// INVIA MESSAGGIO DI BENVENUTO
+// ======================================================
+
+async function sendWelcomeWithButton(sock, jid) {
+
+  console.log(
+    "📤 Creazione messaggio di benvenuto..."
+  );
+
+  const button =
+    createQuickReplyButton(
+      "/comandi",
+      "/comandi"
+    );
 
   const interactiveMessage =
     proto.Message.InteractiveMessage.create({
@@ -230,19 +214,13 @@ async function sendWelcomeWithButton(
 
           ],
 
-          messageParamsJson:
-            "{}",
+          messageParamsJson: "{}",
 
-          messageVersion:
-            1
+          messageVersion: 1
 
         })
 
     });
-
-  // ------------------------------------------
-  // GENERA MESSAGGIO WHATSAPP
-  // ------------------------------------------
 
   const waMessage =
     generateWAMessageFromContent(
@@ -260,47 +238,24 @@ async function sendWelcomeWithButton(
 
     );
 
-  // ------------------------------------------
-  // BIZ NODE
-  // ------------------------------------------
-
   const bizNode =
     buildMixedNativeFlowBizNode();
 
-  // ------------------------------------------
-  // BOT NODE
-  // ------------------------------------------
-
   const botNode = {
-
     tag: "bot",
 
     attrs: {
       biz_bot: "1"
     }
-
   };
-
-  // ------------------------------------------
-  // CHAT PRIVATA / GRUPPO
-  // ------------------------------------------
 
   const isGroup =
     jid.endsWith("@g.us");
 
   const additionalNodes =
     isGroup
-
       ? [bizNode]
-
-      : [
-          botNode,
-          bizNode
-        ];
-
-  // ------------------------------------------
-  // INVIO REALE
-  // ------------------------------------------
+      : [botNode, bizNode];
 
   await sock.relayMessage(
 
@@ -313,13 +268,154 @@ async function sendWelcomeWithButton(
         waMessage.key.id,
 
       additionalNodes
-
     }
 
   );
 
   console.log(
-    "✅ Messaggio interattivo con pulsante /comandi inviato."
+    "✅ Messaggio di benvenuto + /comandi inviato."
+  );
+}
+
+// ======================================================
+// INVIA PAGINA COMANDI CON 3 PULSANTI
+// ======================================================
+
+async function sendCommandsWithButtons(
+  sock,
+  jid
+) {
+
+  console.log(
+    "📤 Invio pagina comandi..."
+  );
+
+  const buttons = [
+
+    createQuickReplyButton(
+      "/ping",
+      "/ping"
+    ),
+
+    createQuickReplyButton(
+      "/info",
+      "/info"
+    ),
+
+    createQuickReplyButton(
+      "ciao",
+      "ciao"
+    )
+
+  ];
+
+  const interactiveMessage =
+    proto.Message.InteractiveMessage.create({
+
+      header:
+        proto.Message.InteractiveMessage.Header.create({
+          hasMediaAttachment: false
+        }),
+
+      body:
+        proto.Message.InteractiveMessage.Body.create({
+
+          text:
+            "🤖 *COMANDI BOT*\n\n" +
+            "Ecco cosa puoi fare con il bot.\n" +
+            "Premi uno dei pulsanti qui sotto per eseguire direttamente il comando."
+
+        }),
+
+      footer:
+        proto.Message.InteractiveMessage.Footer.create({
+
+          text:
+            "Davide WhatsApp Bot"
+
+        }),
+
+      nativeFlowMessage:
+        proto.Message.InteractiveMessage.NativeFlowMessage.create({
+
+          buttons: buttons.map((button) =>
+
+            proto.Message
+              .InteractiveMessage
+              .NativeFlowMessage
+              .NativeFlowButton
+              .create({
+
+                name:
+                  button.name,
+
+                buttonParamsJson:
+                  button.buttonParamsJson
+
+              })
+
+          ),
+
+          messageParamsJson: "{}",
+
+          messageVersion: 1
+
+        })
+
+    });
+
+  const waMessage =
+    generateWAMessageFromContent(
+
+      jid,
+
+      {
+        interactiveMessage
+      },
+
+      {
+        userJid:
+          sock.user?.id
+      }
+
+    );
+
+  const bizNode =
+    buildMixedNativeFlowBizNode();
+
+  const botNode = {
+    tag: "bot",
+
+    attrs: {
+      biz_bot: "1"
+    }
+  };
+
+  const isGroup =
+    jid.endsWith("@g.us");
+
+  const additionalNodes =
+    isGroup
+      ? [bizNode]
+      : [botNode, bizNode];
+
+  await sock.relayMessage(
+
+    jid,
+
+    waMessage.message,
+
+    {
+      messageId:
+        waMessage.key.id,
+
+      additionalNodes
+    }
+
+  );
+
+  console.log(
+    "✅ Pagina comandi con 3 pulsanti inviata."
   );
 }
 
@@ -350,8 +446,7 @@ async function startWhatsApp() {
     const sock =
       makeWASocket({
 
-        auth:
-          state,
+        auth: state,
 
         logger:
           P({
@@ -626,26 +721,9 @@ async function startWhatsApp() {
                 "🤖 /comandi riconosciuto."
               );
 
-              await sock.sendMessage(
-                chat,
-                {
-
-                  text:
-                    "🤖 *COMANDI BOT*\n\n" +
-
-                    "• /comandi — Mostra tutti i comandi\n" +
-
-                    "• /ping — Controlla se il bot è online\n" +
-
-                    "• /info — Mostra le informazioni del bot\n" +
-
-                    "• ciao — Saluta il bot"
-
-                }
-              );
-
-              console.log(
-                "✅ Lista comandi inviata."
+              await sendCommandsWithButtons(
+                sock,
+                chat
               );
 
               continue;
@@ -660,11 +738,16 @@ async function startWhatsApp() {
               "/ping"
             ) {
 
+              console.log(
+                "🏓 /ping riconosciuto."
+              );
+
               await sock.sendMessage(
                 chat,
                 {
                   text:
-                    "🏓 Pong!"
+                    "🏓 Pong!\n\n" +
+                    "✅ Il bot è online e funzionante."
                 }
               );
 
@@ -680,6 +763,10 @@ async function startWhatsApp() {
               "/info"
             ) {
 
+              console.log(
+                "ℹ️ /info riconosciuto."
+              );
+
               await sock.sendMessage(
                 chat,
                 {
@@ -687,7 +774,8 @@ async function startWhatsApp() {
                   text:
                     "🤖 *Davide WhatsApp Bot*\n\n" +
                     "🟢 Stato: Online\n" +
-                    "⚡ Powered by Baileys"
+                    "⚡ Powered by Baileys\n\n" +
+                    "Il bot è attivo e pronto a ricevere comandi."
 
                 }
               );
@@ -718,7 +806,7 @@ async function startWhatsApp() {
               } catch (error) {
 
                 console.error(
-                  "❌ ERRORE INVIO MESSAGGIO INTERATTIVO:"
+                  "❌ ERRORE INVIO BENVENUTO:"
                 );
 
                 console.error(
@@ -731,7 +819,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // NON RICONOSCIUTO
+            // COMANDO NON RICONOSCIUTO
             // ==================================================
 
             console.log(
