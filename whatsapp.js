@@ -59,7 +59,6 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
-      // QR
       if (qr) {
         currentQR = qr;
 
@@ -72,7 +71,6 @@ async function startWhatsApp() {
         );
       }
 
-      // CONNESSO
       if (connection === "open") {
         currentQR = null;
         starting = false;
@@ -90,7 +88,6 @@ async function startWhatsApp() {
         console.log("");
       }
 
-      // DISCONNESSO
       if (connection === "close") {
         currentQR = null;
         starting = false;
@@ -144,30 +141,6 @@ async function startWhatsApp() {
           // RISPOSTA AL PULSANTE
           // ======================================
 
-          const buttonResponse =
-            message.message.buttonsResponseMessage;
-
-          if (buttonResponse) {
-            const buttonId =
-              buttonResponse.selectedButtonId;
-
-            console.log(
-              `🔘 Pulsante premuto: ${buttonId}`
-            );
-
-            if (buttonId === "vedi_comandi") {
-              await sock.sendMessage(chat, {
-                text: "🏓 !ping"
-              });
-
-              return;
-            }
-          }
-
-          // ======================================
-          // RISPOSTA INTERACTIVE
-          // ======================================
-
           const interactiveResponse =
             message.message.interactiveResponseMessage;
 
@@ -180,22 +153,26 @@ async function startWhatsApp() {
                     ?.paramsJson || "{}"
                 );
 
-              const buttonId = params.id;
+              const buttonId =
+                params.id;
 
               console.log(
-                `🔘 Interactive button: ${buttonId}`
+                `🔘 Pulsante premuto: ${buttonId}`
               );
 
-              if (buttonId === "vedi_comandi") {
+              if (
+                buttonId === "vedi_comandi"
+              ) {
                 await sock.sendMessage(chat, {
                   text: "🏓 !ping"
                 });
 
                 return;
               }
+
             } catch (error) {
               console.error(
-                "❌ Errore risposta interactive:"
+                "❌ Errore risposta pulsante:"
               );
 
               console.error(error);
@@ -205,7 +182,33 @@ async function startWhatsApp() {
           }
 
           // ======================================
-          // TEST CIAO
+          // RISPOSTA BUTTONS LEGACY
+          // ======================================
+
+          const buttonResponse =
+            message.message.buttonsResponseMessage;
+
+          if (buttonResponse) {
+            const buttonId =
+              buttonResponse.selectedButtonId;
+
+            console.log(
+              `🔘 Pulsante premuto: ${buttonId}`
+            );
+
+            if (
+              buttonId === "vedi_comandi"
+            ) {
+              await sock.sendMessage(chat, {
+                text: "🏓 !ping"
+              });
+
+              return;
+            }
+          }
+
+          // ======================================
+          // TEST "CIAO"
           // ======================================
 
           const text =
@@ -222,32 +225,49 @@ async function startWhatsApp() {
           if (
             text.trim().toLowerCase() === "ciao"
           ) {
+
             console.log(
-              "🔘 Invio pulsante Vedi comandi..."
+              "🔘 Invio pulsante native flow..."
             );
 
             await sock.sendMessage(chat, {
-              text: "",
-              footer: "Davide WhatsApp Bot",
+              interactiveMessage: {
+                header: {
+                  title: "Davide WhatsApp Bot",
+                  hasMediaAttachment: false
+                },
 
-              buttons: [
-                {
-                  name: "quick_reply",
+                body: {
+                  text: "Ciao! 👋"
+                },
 
-                  buttonParamsJson:
-                    JSON.stringify({
-                      display_text:
-                        "📋 Vedi comandi",
+                footer: {
+                  text: "Seleziona un'opzione"
+                },
 
-                      id:
-                        "vedi_comandi"
-                    })
+                nativeFlowMessage: {
+                  buttons: [
+                    {
+                      name: "quick_reply",
+
+                      buttonParamsJson:
+                        JSON.stringify({
+                          display_text:
+                            "📋 Vedi comandi",
+
+                          id:
+                            "vedi_comandi"
+                        })
+                    }
+                  ],
+
+                  messageParamsJson: ""
                 }
-              ]
+              }
             });
 
             console.log(
-              "✅ Pulsante inviato."
+              "✅ Messaggio interattivo inviato."
             );
 
             return;
