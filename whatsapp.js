@@ -44,7 +44,7 @@ async function startWhatsApp() {
     sock.ev.on("creds.update", saveCreds);
 
     // ==========================================
-    // CONNESSIONE
+    // CONNESSIONE WHATSAPP
     // ==========================================
 
     sock.ev.on("connection.update", async (update) => {
@@ -59,6 +59,7 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
+      // QR CODE
       if (qr) {
         currentQR = qr;
 
@@ -71,6 +72,7 @@ async function startWhatsApp() {
         );
       }
 
+      // WHATSAPP COLLEGATO
       if (connection === "open") {
         currentQR = null;
         starting = false;
@@ -88,6 +90,7 @@ async function startWhatsApp() {
         console.log("");
       }
 
+      // CONNESSIONE CHIUSA
       if (connection === "close") {
         currentQR = null;
         starting = false;
@@ -127,7 +130,9 @@ async function startWhatsApp() {
     sock.ev.on(
       "messages.upsert",
       async ({ messages }) => {
+
         try {
+
           const message = messages[0];
 
           if (!message) return;
@@ -138,57 +143,14 @@ async function startWhatsApp() {
             message.key.remoteJid;
 
           // ======================================
-          // RISPOSTA AL PULSANTE
-          // ======================================
-
-          const interactiveResponse =
-            message.message.interactiveResponseMessage;
-
-          if (interactiveResponse) {
-            try {
-              const params =
-                JSON.parse(
-                  interactiveResponse
-                    ?.nativeFlowResponseMessage
-                    ?.paramsJson || "{}"
-                );
-
-              const buttonId =
-                params.id;
-
-              console.log(
-                `🔘 Pulsante premuto: ${buttonId}`
-              );
-
-              if (
-                buttonId === "vedi_comandi"
-              ) {
-                await sock.sendMessage(chat, {
-                  text: "🏓 !ping"
-                });
-
-                return;
-              }
-
-            } catch (error) {
-              console.error(
-                "❌ Errore risposta pulsante:"
-              );
-
-              console.error(error);
-            }
-
-            return;
-          }
-
-          // ======================================
-          // RISPOSTA BUTTONS LEGACY
+          // RISPOSTA AL PULSANTE CLASSICO
           // ======================================
 
           const buttonResponse =
             message.message.buttonsResponseMessage;
 
           if (buttonResponse) {
+
             const buttonId =
               buttonResponse.selectedButtonId;
 
@@ -196,19 +158,28 @@ async function startWhatsApp() {
               `🔘 Pulsante premuto: ${buttonId}`
             );
 
+            // VEDI COMANDI
             if (
               buttonId === "vedi_comandi"
             ) {
-              await sock.sendMessage(chat, {
-                text: "🏓 !ping"
-              });
+
+              await sock.sendMessage(
+                chat,
+                {
+                  text:
+                    "🏓 !ping\n\n" +
+                    "Controlla se il bot è online."
+                }
+              );
 
               return;
             }
+
+            return;
           }
 
           // ======================================
-          // TEST "CIAO"
+          // TESTO NORMALE
           // ======================================
 
           const text =
@@ -222,82 +193,86 @@ async function startWhatsApp() {
             `📩 Messaggio ricevuto: ${text}`
           );
 
+          // ======================================
+          // CIAO
+          // ======================================
+
           if (
             text.trim().toLowerCase() === "ciao"
           ) {
 
             console.log(
-              "🔘 Invio pulsante native flow..."
+              "🔘 Invio pulsante classico..."
             );
 
-            await sock.sendMessage(chat, {
-              interactiveMessage: {
-                header: {
-                  title: "Davide WhatsApp Bot",
-                  hasMediaAttachment: false
-                },
+            await sock.sendMessage(
+              chat,
+              {
+                text:
+                  "Ciao! 👋",
 
-                body: {
-                  text: "Ciao! 👋"
-                },
+                footer:
+                  "Davide WhatsApp Bot",
 
-                footer: {
-                  text: "Seleziona un'opzione"
-                },
+                buttons: [
+                  {
+                    buttonId:
+                      "vedi_comandi",
 
-                nativeFlowMessage: {
-                  buttons: [
-                    {
-                      name: "quick_reply",
+                    buttonText: {
+                      displayText:
+                        "📋 Vedi comandi"
+                    },
 
-                      buttonParamsJson:
-                        JSON.stringify({
-                          display_text:
-                            "📋 Vedi comandi",
+                    type: 1
+                  }
+                ],
 
-                          id:
-                            "vedi_comandi"
-                        })
-                    }
-                  ],
-
-                  messageParamsJson: ""
-                }
+                headerType: 1
               }
-            });
+            );
 
             console.log(
-              "✅ Messaggio interattivo inviato."
+              "✅ Pulsante inviato."
             );
 
             return;
           }
 
           // ======================================
-          // !PING MANUALE
+          // !PING SCRITTO MANUALMENTE
           // ======================================
 
           if (
             text.trim().toLowerCase() === "!ping"
           ) {
-            await sock.sendMessage(chat, {
-              text: "🏓 Pong!"
-            });
+
+            await sock.sendMessage(
+              chat,
+              {
+                text:
+                  "🏓 Pong!"
+              }
+            );
 
             return;
           }
 
         } catch (error) {
+
           console.error(
             "❌ Errore gestione messaggio:"
           );
 
           console.error(error);
+
         }
+
       }
     );
 
   } catch (error) {
+
     console.error(
       "❌ Errore avvio WhatsApp:"
     );
