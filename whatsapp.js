@@ -44,7 +44,7 @@ async function startWhatsApp() {
     sock.ev.on("creds.update", saveCreds);
 
     // ==========================================
-    // CONNESSIONE
+    // CONNESSIONE WHATSAPP
     // ==========================================
 
     sock.ev.on("connection.update", async (update) => {
@@ -59,6 +59,7 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
+      // QR CODE
       if (qr) {
         currentQR = qr;
 
@@ -71,6 +72,7 @@ async function startWhatsApp() {
         );
       }
 
+      // WHATSAPP COLLEGATO
       if (connection === "open") {
         currentQR = null;
         starting = false;
@@ -88,6 +90,7 @@ async function startWhatsApp() {
         console.log("");
       }
 
+      // CONNESSIONE CHIUSA
       if (connection === "close") {
         currentQR = null;
         starting = false;
@@ -139,63 +142,7 @@ async function startWhatsApp() {
           const chat =
             message.key.remoteJid;
 
-          // ======================================
-          // RISPOSTA AL PULSANTE
-          // ======================================
-
-          const interactiveResponse =
-            message.message.interactiveResponseMessage;
-
-          if (interactiveResponse) {
-
-            try {
-
-              const params =
-                JSON.parse(
-                  interactiveResponse
-                    ?.nativeFlowResponseMessage
-                    ?.paramsJson || "{}"
-                );
-
-              const buttonId =
-                params.id;
-
-              console.log(
-                `🔘 Pulsante premuto: ${buttonId}`
-              );
-
-              if (
-                buttonId === "vedi_comandi"
-              ) {
-
-                await sock.sendMessage(
-                  chat,
-                  {
-                    text:
-                      "🏓 !ping\n\n" +
-                      "Controlla se il bot è online."
-                  }
-                );
-
-                return;
-              }
-
-            } catch (error) {
-
-              console.error(
-                "❌ Errore risposta pulsante:"
-              );
-
-              console.error(error);
-            }
-
-            return;
-          }
-
-          // ======================================
-          // CIAO
-          // ======================================
-
+          // TESTO RICEVUTO
           const text =
             message.message.conversation ||
             message.message.extendedTextMessage?.text ||
@@ -203,63 +150,75 @@ async function startWhatsApp() {
 
           if (!text) return;
 
+          const command =
+            text.trim().toLowerCase();
+
           console.log(
             `📩 Messaggio ricevuto: ${text}`
           );
 
-          if (
-            text.trim().toLowerCase() === "ciao"
-          ) {
+          // ======================================
+          // CIAO
+          // ======================================
 
-            console.log(
-              "🔘 Invio pulsante Vedi comandi..."
-            );
+          if (command === "ciao") {
 
             await sock.sendMessage(
               chat,
               {
-                text: "Ciao! 👋",
-
-                footer:
-                  "Davide WhatsApp Bot",
-
-                buttons: [
-                  {
-                    name: "quick_reply",
-
-                    buttonParamsJson:
-                      JSON.stringify({
-                        display_text:
-                          "📋 Vedi comandi",
-
-                        id:
-                          "vedi_comandi"
-                      })
-                  }
-                ]
+                text:
+                  "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖\n\n" +
+                  "Per vedere tutti i comandi scrivi:\n" +
+                  "/comandi"
               }
             );
 
             console.log(
-              "✅ Messaggio con pulsante inviato."
+              "✅ Messaggio di benvenuto inviato."
             );
 
             return;
           }
 
           // ======================================
-          // !PING
+          // /COMANDI
           // ======================================
 
-          if (
-            text.trim().toLowerCase() === "!ping"
-          ) {
+          if (command === "/comandi") {
 
             await sock.sendMessage(
               chat,
               {
-                text: "🏓 Pong!"
+                text:
+                  "🤖 *COMANDI DISPONIBILI*\n\n" +
+                  "🏓 /ping\n" +
+                  "Controlla se il bot è online."
               }
+            );
+
+            console.log(
+              "📋 Lista comandi inviata."
+            );
+
+            return;
+          }
+
+          // ======================================
+          // /PING
+          // ======================================
+
+          if (command === "/ping") {
+
+            await sock.sendMessage(
+              chat,
+              {
+                text:
+                  "🏓 Pong!"
+              }
+            );
+
+            console.log(
+              "🏓 Pong inviato."
             );
 
             return;
@@ -272,7 +231,9 @@ async function startWhatsApp() {
           );
 
           console.error(error);
+
         }
+
       }
     );
 
