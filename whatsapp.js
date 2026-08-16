@@ -15,7 +15,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE BOT
 // ======================================================
 
-const BOT_VERSION = "1.0.1";
+const BOT_VERSION = "1.0.2";
 
 // ======================================================
 // STATO BOT
@@ -30,6 +30,8 @@ let botStartTime = Date.now();
 
 let messagesReceived = 0;
 let messagesSent = 0;
+
+let commandsExecuted = 0;
 
 // ======================================================
 // QR CODE
@@ -96,7 +98,7 @@ function getUptime() {
 }
 
 // ======================================================
-// ESTRAI TESTO
+// TESTO MESSAGGIO
 // ======================================================
 
 function getMessageText(message) {
@@ -114,7 +116,7 @@ function getMessageText(message) {
 }
 
 // ======================================================
-// ESTRAI RISPOSTA PULSANTE
+// RISPOSTA PULSANTE
 // ======================================================
 
 function getButtonId(message) {
@@ -272,7 +274,7 @@ function createQuickReplyButton(
 }
 
 // ======================================================
-// INVIA BENVENUTO + /COMANDI
+// INVIA BENVENUTO
 // ======================================================
 
 async function sendWelcomeWithButton(
@@ -413,7 +415,7 @@ async function sendWelcomeWithButton(
 }
 
 // ======================================================
-// INVIA PAGINA COMANDI
+// PAGINA COMANDI
 // ======================================================
 
 async function sendCommandsWithButtons(
@@ -433,13 +435,18 @@ async function sendCommandsWithButtons(
     ),
 
     createQuickReplyButton(
+      "/uptime",
+      "/uptime"
+    ),
+
+    createQuickReplyButton(
       "/info",
       "/info"
     ),
 
     createQuickReplyButton(
-      "/uptime",
-      "/uptime"
+      "/statistiche",
+      "/statistiche"
     )
 
   ];
@@ -464,11 +471,13 @@ async function sendCommandsWithButtons(
 
             "Scegli cosa vuoi fare:\n\n" +
 
-            "📊 */stato* — Mostra lo stato del bot, il numero di messaggi ricevuti e inviati.\n\n" +
-
-            "ℹ️ */info* — Mostra le informazioni del bot e la versione attuale.\n\n" +
+            "📊 */stato* — Controlla lo stato attuale del bot.\n\n" +
 
             "🕐 */uptime* — Mostra da quanto tempo il bot è attivo.\n\n" +
+
+            "ℹ️ */info* — Mostra le informazioni tecniche del bot.\n\n" +
+
+            "📈 */statistiche* — Mostra le statistiche di utilizzo.\n\n" +
 
             "👇 Premi uno dei pulsanti qui sotto."
 
@@ -574,7 +583,7 @@ async function sendCommandsWithButtons(
   messagesSent++;
 
   console.log(
-    "✅ Pagina comandi con 3 pulsanti inviata."
+    "✅ Pagina comandi inviata."
   );
 }
 
@@ -588,7 +597,8 @@ async function startWhatsApp() {
 
   starting = true;
 
-  botStartTime = Date.now();
+  botStartTime =
+    Date.now();
 
   try {
 
@@ -779,7 +789,7 @@ async function startWhatsApp() {
     );
 
     // ==================================================
-    // MESSAGGI
+    // RICEZIONE MESSAGGI
     // ==================================================
 
     sock.ev.on(
@@ -884,7 +894,7 @@ async function startWhatsApp() {
               continue;
 
             // ------------------------------------------
-            // CONTA MESSAGGIO RICEVUTO
+            // CONTA RICEVUTO
             // ------------------------------------------
 
             messagesReceived++;
@@ -918,6 +928,8 @@ async function startWhatsApp() {
                 "🤖 /comandi riconosciuto."
               );
 
+              commandsExecuted++;
+
               await sendCommandsWithButtons(
                 sock,
                 chat
@@ -940,6 +952,8 @@ async function startWhatsApp() {
                 "📊 /stato riconosciuto."
               );
 
+              commandsExecuted++;
+
               const stato =
                 whatsappConnected
                   ? "🟢 Connesso"
@@ -955,57 +969,7 @@ async function startWhatsApp() {
 
                     `📡 WhatsApp: ${stato}\n` +
 
-                    `📦 Versione: ${BOT_VERSION}\n` +
-
-                    `📥 Messaggi ricevuti: ${messagesReceived}\n` +
-
-                    `📤 Messaggi inviati: ${messagesSent}\n` +
-
-                    `🕐 Uptime: ${getUptime()}`
-
-                }
-              );
-
-              messagesSent++;
-
-              continue;
-
-            }
-
-            // ==================================================
-            // /INFO
-            // ==================================================
-
-            if (
-              command.toLowerCase() ===
-              "/info"
-            ) {
-
-              console.log(
-                "ℹ️ /info riconosciuto."
-              );
-
-              await sock.sendMessage(
-                chat,
-                {
-
-                  text:
-
-                    "ℹ️ *INFORMAZIONI BOT*\n\n" +
-
-                    "🤖 Nome: Davide WhatsApp Bot\n" +
-
-                    `📦 Versione: ${BOT_VERSION}\n` +
-
-                    "⚡ Motore: Baileys\n" +
-
-                    `📡 WhatsApp: ${
-                      whatsappConnected
-                        ? "Connesso 🟢"
-                        : "Disconnesso 🔴"
-                    }\n\n` +
-
-                    "Il bot è sviluppato per automatizzare le risposte su WhatsApp."
+                    "🤖 Bot: 🟢 Attivo"
 
                 }
               );
@@ -1029,6 +993,8 @@ async function startWhatsApp() {
                 "🕐 /uptime riconosciuto."
               );
 
+              commandsExecuted++;
+
               await sock.sendMessage(
                 chat,
                 {
@@ -1037,7 +1003,87 @@ async function startWhatsApp() {
 
                     "🕐 *UPTIME BOT*\n\n" +
 
-                    `Il bot è attivo da:\n*${getUptime()}*`
+                    "Il bot è attivo da:\n\n" +
+
+                    `*${getUptime()}*`
+
+                }
+              );
+
+              messagesSent++;
+
+              continue;
+
+            }
+
+            // ==================================================
+            // /INFO
+            // ==================================================
+
+            if (
+              command.toLowerCase() ===
+              "/info"
+            ) {
+
+              console.log(
+                "ℹ️ /info riconosciuto."
+              );
+
+              commandsExecuted++;
+
+              await sock.sendMessage(
+                chat,
+                {
+
+                  text:
+
+                    "ℹ️ *INFORMAZIONI BOT*\n\n" +
+
+                    "🤖 Nome: Davide WhatsApp Bot\n" +
+
+                    `📦 Versione: ${BOT_VERSION}\n` +
+
+                    "⚡ Motore: Baileys\n" +
+
+                    "🟢 Sistema: Linux"
+
+                }
+              );
+
+              messagesSent++;
+
+              continue;
+
+            }
+
+            // ==================================================
+            // /STATISTICHE
+            // ==================================================
+
+            if (
+              command.toLowerCase() ===
+              "/statistiche"
+            ) {
+
+              console.log(
+                "📈 /statistiche riconosciuto."
+              );
+
+              commandsExecuted++;
+
+              await sock.sendMessage(
+                chat,
+                {
+
+                  text:
+
+                    "📈 *STATISTICHE BOT*\n\n" +
+
+                    `📥 Messaggi ricevuti: ${messagesReceived}\n` +
+
+                    `📤 Messaggi inviati: ${messagesSent}\n` +
+
+                    `⚡ Comandi eseguiti: ${commandsExecuted}`
 
                 }
               );
