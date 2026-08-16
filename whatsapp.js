@@ -43,6 +43,10 @@ async function startWhatsApp() {
 
     sock.ev.on("creds.update", saveCreds);
 
+    // ==========================================
+    // CONNESSIONE
+    // ==========================================
+
     sock.ev.on("connection.update", async (update) => {
       const {
         connection,
@@ -55,10 +59,7 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
-      // ==========================================
-      // QR CODE
-      // ==========================================
-
+      // Nuovo QR
       if (qr) {
         currentQR = qr;
 
@@ -67,16 +68,14 @@ async function startWhatsApp() {
         );
 
         console.log(
-          "🌐 Apri la pagina del bot per scansionarlo."
+          "🌐 Apri /qr per visualizzarlo."
         );
       }
 
-      // ==========================================
-      // WHATSAPP COLLEGATO
-      // ==========================================
-
+      // WhatsApp collegato
       if (connection === "open") {
         currentQR = null;
+        starting = false;
 
         console.log("");
         console.log(
@@ -89,16 +88,12 @@ async function startWhatsApp() {
           "=========================================="
         );
         console.log("");
-
-        starting = false;
       }
 
-      // ==========================================
-      // CONNESSIONE CHIUSA
-      // ==========================================
-
+      // Connessione chiusa
       if (connection === "close") {
         currentQR = null;
+        starting = false;
 
         const statusCode =
           lastDisconnect?.error?.output?.statusCode;
@@ -107,8 +102,6 @@ async function startWhatsApp() {
           "❌ Connessione WhatsApp chiusa:",
           statusCode
         );
-
-        starting = false;
 
         if (
           statusCode === DisconnectReason.loggedOut
@@ -144,52 +137,212 @@ async function startWhatsApp() {
           if (!message.message) return;
           if (message.key.fromMe) return;
 
+          const chat =
+            message.key.remoteJid;
+
           const text =
             message.message.conversation ||
             message.message.extendedTextMessage?.text ||
             "";
 
-          if (!text) return;
+          // ======================================
+          // RISPOSTE AI PULSANTI / MENU
+          // ======================================
 
-          const chat =
-            message.key.remoteJid;
+          const interactiveResponse =
+            message.message.interactiveResponseMessage;
+
+          if (interactiveResponse) {
+
+            try {
+
+              const params =
+                JSON.parse(
+                  interactiveResponse
+                    ?.nativeFlowResponseMessage
+                    ?.paramsJson || "{}"
+                );
+
+              const buttonId =
+                params.id;
+
+              console.log(
+                `🔘 Pulsante premuto: ${buttonId}`
+              );
+
+              // VEDI COMANDI
+              if (
+                buttonId === "vedi_comandi"
+              ) {
+
+                await sock.sendMessage(
+                  chat,
+                  {
+                    text:
+                      "📋 *Comandi disponibili*\n\n" +
+                      "Seleziona il comando che vuoi utilizzare.",
+                    buttons: [
+                      {
+                        name: "single_select",
+
+                        buttonParamsJson:
+                          JSON.stringify({
+                            title:
+                              "📋 Vedi comandi",
+
+                            sections: [
+                              {
+                                title:
+                                  "Comandi",
+
+                                rows: [
+                                  {
+                                    title:
+                                      "🏓 !ping",
+
+                                    description:
+                                      "Controlla se il bot è online.",
+
+                                    id:
+                                      "ping"
+                                  }
+                                ]
+                              }
+                            ]
+                          })
+                      }
+                    ]
+                  }
+                );
+
+                return;
+              }
+
+              // PING
+              if (
+                buttonId === "ping"
+              ) {
+
+                await sock.sendMessage(
+                  chat,
+                  {
+                    text: "🏓 Pong!"
+                  }
+                );
+
+                return;
+              }
+
+            } catch (error) {
+
+              console.error(
+                "❌ Errore risposta pulsante:"
+              );
+
+              console.error(error);
+            }
+
+            return;
+          }
+
+          // ======================================
+          // RISPOSTA LISTA
+          // ======================================
+
+          const listResponse =
+            message.message.listResponseMessage;
+
+          if (listResponse) {
+
+            const selectedId =
+              listResponse
+                ?.singleSelectReply
+                ?.selectedRowId;
+
+            console.log(
+              `📋 Voce selezionata: ${selectedId}`
+            );
+
+            if (
+              selectedId === "ping"
+            ) {
+
+              await sock.sendMessage(
+                chat,
+                {
+                  text: "🏓 Pong!"
+                }
+              );
+
+            }
+
+            return;
+          }
+
+          // ======================================
+          // MESSAGGIO NORMALE
+          // ======================================
+
+          if (!text) return;
 
           console.log(
             `📩 Messaggio ricevuto: ${text}`
           );
 
+          // ======================================
           // CIAO
+          // ======================================
+
           if (
             text.trim().toLowerCase() === "ciao"
           ) {
-            await sock.sendMessage(chat, {
-              text:
-                "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
-            });
+
+            await sock.sendMessage(
+              chat,
+              {
+                text:
+                  "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖",
+
+                buttons: [
+                  {
+                    name: "quick_reply",
+
+                    buttonParamsJson:
+                      JSON.stringify({
+                        display_text:
+                          "📋 Vedi comandi",
+
+                        id:
+                          "vedi_comandi"
+                      })
+                  }
+                ]
+              }
+            );
+
+            return;
           }
 
-          // PING
+          // ======================================
+          // !PING SCRITTO MANUALMENTE
+          // ======================================
+
           if (
             text.trim().toLowerCase() === "!ping"
           ) {
-            await sock.sendMessage(chat, {
-              text: "🏓 Pong!"
-            });
-          }
 
-          // INFO
-          if (
-            text.trim().toLowerCase() === "!info"
-          ) {
-            await sock.sendMessage(chat, {
-              text:
-                "🤖 Davide WhatsApp Bot\n\n" +
-                "🟢 Stato: Online\n" +
-                "⚡ Powered by Baileys"
-            });
+            await sock.sendMessage(
+              chat,
+              {
+                text: "🏓 Pong!"
+              }
+            );
+
+            return;
           }
 
         } catch (error) {
+
           console.error(
             "❌ Errore gestione messaggio:"
           );
@@ -200,6 +353,7 @@ async function startWhatsApp() {
     );
 
   } catch (error) {
+
     console.error(
       "❌ Errore avvio WhatsApp:"
     );
