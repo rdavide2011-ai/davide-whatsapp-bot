@@ -2,7 +2,9 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  Browsers
+  Browsers,
+  proto,
+  generateWAMessageFromContent
 } = require("@whiskeysockets/baileys");
 
 const P = require("pino");
@@ -15,6 +17,76 @@ let starting = false;
 function getQR() {
   return currentQR;
 }
+
+// ==========================================
+// INVIA MESSAGGIO CON QUICK REPLY
+// ==========================================
+
+async function sendQuickReply(sock, jid, text, buttonText, buttonId) {
+  const interactiveMessage =
+    proto.Message.InteractiveMessage.create({
+      body:
+        proto.Message.InteractiveMessage.Body.create({
+          text: text
+        }),
+
+      footer:
+        proto.Message.InteractiveMessage.Footer.create({
+          text: "Davide WhatsApp Bot"
+        }),
+
+      nativeFlowMessage:
+        proto.Message.InteractiveMessage.NativeFlowMessage.create({
+          buttons: [
+            {
+              name: "quick_reply",
+
+              buttonParamsJson: JSON.stringify({
+                display_text: buttonText,
+                id: buttonId
+              })
+            }
+          ],
+
+          messageParamsJson: ""
+        })
+    });
+
+  const message =
+    generateWAMessageFromContent(
+      jid,
+
+      {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2
+            },
+
+            interactiveMessage:
+              interactiveMessage
+          }
+        }
+      },
+
+      {
+        userJid: jid
+      }
+    );
+
+  await sock.relayMessage(
+    jid,
+    message.message,
+    {
+      messageId: message.key.id
+    }
+  );
+}
+
+// ==========================================
+// AVVIO WHATSAPP
+// ==========================================
 
 async function startWhatsApp() {
   if (starting) return;
@@ -34,94 +106,110 @@ async function startWhatsApp() {
         level: "silent"
       }),
 
-      browser: Browsers.macOS("Google Chrome"),
+      browser:
+        Browsers.macOS("Google Chrome"),
 
       printQRInTerminal: false,
 
       markOnlineOnConnect: false
     });
 
-    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on(
+      "creds.update",
+      saveCreds
+    );
 
     // ==========================================
-    // CONNESSIONE WHATSAPP
+    // CONNESSIONE
     // ==========================================
 
-    sock.ev.on("connection.update", async (update) => {
-      const {
-        connection,
-        lastDisconnect,
-        qr
-      } = update;
+    sock.ev.on(
+      "connection.update",
+      async (update) => {
 
-      console.log(
-        "📡 Stato WhatsApp:",
-        connection || "waiting"
-      );
-
-      // QR CODE
-      if (qr) {
-        currentQR = qr;
+        const {
+          connection,
+          lastDisconnect,
+          qr
+        } = update;
 
         console.log(
-          "📷 QR Code WhatsApp disponibile."
+          "📡 Stato WhatsApp:",
+          connection || "waiting"
         );
 
-        console.log(
-          "🌐 Apri /qr per visualizzarlo."
-        );
-      }
+        // QR
+        if (qr) {
 
-      // WHATSAPP COLLEGATO
-      if (connection === "open") {
-        currentQR = null;
-        starting = false;
+          currentQR = qr;
 
-        console.log("");
-        console.log(
-          "=========================================="
-        );
-        console.log(
-          "       ✅ WHATSAPP COLLEGATO"
-        );
-        console.log(
-          "=========================================="
-        );
-        console.log("");
-      }
-
-      // CONNESSIONE CHIUSA
-      if (connection === "close") {
-        currentQR = null;
-        starting = false;
-
-        const statusCode =
-          lastDisconnect?.error?.output?.statusCode;
-
-        console.log(
-          "❌ Connessione WhatsApp chiusa:",
-          statusCode
-        );
-
-        if (
-          statusCode === DisconnectReason.loggedOut
-        ) {
           console.log(
-            "🚪 WhatsApp ha effettuato il logout."
+            "📷 QR Code WhatsApp disponibile."
           );
 
-          return;
+          console.log(
+            "🌐 Apri /qr per visualizzarlo."
+          );
         }
 
-        console.log(
-          "🔄 Riconnessione tra 5 secondi..."
-        );
+        // COLLEGATO
+        if (connection === "open") {
 
-        setTimeout(() => {
-          startWhatsApp();
-        }, 5000);
+          currentQR = null;
+          starting = false;
+
+          console.log("");
+          console.log(
+            "=========================================="
+          );
+          console.log(
+            "       ✅ WHATSAPP COLLEGATO"
+          );
+          console.log(
+            "=========================================="
+          );
+          console.log("");
+        }
+
+        // CHIUSO
+        if (connection === "close") {
+
+          currentQR = null;
+          starting = false;
+
+          const statusCode =
+            lastDisconnect
+              ?.error
+              ?.output
+              ?.statusCode;
+
+          console.log(
+            "❌ Connessione WhatsApp chiusa:",
+            statusCode
+          );
+
+          if (
+            statusCode ===
+            DisconnectReason.loggedOut
+          ) {
+
+            console.log(
+              "🚪 WhatsApp ha effettuato il logout."
+            );
+
+            return;
+          }
+
+          console.log(
+            "🔄 Riconnessione tra 5 secondi..."
+          );
+
+          setTimeout(() => {
+            startWhatsApp();
+          }, 5000);
+        }
       }
-    });
+    );
 
     // ==========================================
     // MESSAGGI
@@ -133,22 +221,126 @@ async function startWhatsApp() {
 
         try {
 
-          const message = messages[0];
+          const message =
+            messages[0];
 
           if (!message) return;
-          if (!message.message) return;
-          if (message.key.fromMe) return;
+
+          if (!message.message)
+            return;
+
+          if (message.key.fromMe)
+            return;
 
           const chat =
             message.key.remoteJid;
 
-          // TESTO RICEVUTO
+          // ======================================
+          // QUICK REPLY
+          // ======================================
+
+          const interactiveResponse =
+            message.message
+              .interactiveResponseMessage;
+
+          if (interactiveResponse) {
+
+            try {
+
+              const paramsJson =
+                interactiveResponse
+                  ?.nativeFlowResponseMessage
+                  ?.paramsJson;
+
+              if (!paramsJson)
+                return;
+
+              const params =
+                JSON.parse(paramsJson);
+
+              const buttonId =
+                params.id;
+
+              console.log(
+                `🔘 Quick Reply ricevuto: ${buttonId}`
+              );
+
+              // ----------------------------------
+              // /COMANDI
+              // ----------------------------------
+
+              if (
+                buttonId === "/comandi"
+              ) {
+
+                await sendQuickReply(
+                  sock,
+                  chat,
+
+                  "🤖 COMANDI DISPONIBILI\n\n" +
+                  "🏓 /ping\n" +
+                  "Controlla se il bot è online.",
+
+                  "/ping",
+
+                  "/ping"
+                );
+
+                console.log(
+                  "📋 Comandi inviati."
+                );
+
+                return;
+              }
+
+              // ----------------------------------
+              // /PING
+              // ----------------------------------
+
+              if (
+                buttonId === "/ping"
+              ) {
+
+                await sock.sendMessage(
+                  chat,
+                  {
+                    text: "🏓 Pong!"
+                  }
+                );
+
+                console.log(
+                  "🏓 Pong inviato."
+                );
+
+                return;
+              }
+
+            } catch (error) {
+
+              console.error(
+                "❌ Errore Quick Reply:"
+              );
+
+              console.error(error);
+            }
+
+            return;
+          }
+
+          // ======================================
+          // TESTO NORMALE
+          // ======================================
+
           const text =
-            message.message.conversation ||
-            message.message.extendedTextMessage?.text ||
+            message.message
+              .conversation ||
+            message.message
+              .extendedTextMessage
+              ?.text ||
             "";
 
-          if (!text) return;
+          if (!text)
+            return;
 
           const command =
             text.trim().toLowerCase();
@@ -161,64 +353,66 @@ async function startWhatsApp() {
           // CIAO
           // ======================================
 
-          if (command === "ciao") {
+          if (
+            command === "ciao"
+          ) {
 
-            await sock.sendMessage(
+            await sendQuickReply(
+              sock,
               chat,
-              {
-                text:
-                  "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖\n\n" +
-                  "Per vedere tutti i comandi scrivi:\n" +
-                  "/comandi"
-              }
+
+              "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖\n\n" +
+              "Clicca il pulsante qui sotto per vedere i comandi.",
+
+              "/comandi",
+
+              "/comandi"
             );
 
             console.log(
-              "✅ Messaggio di benvenuto inviato."
+              "📋 Pulsante /comandi inviato."
             );
 
             return;
           }
 
           // ======================================
-          // /COMANDI
+          // /COMANDI SCRITTO MANUALMENTE
           // ======================================
 
-          if (command === "/comandi") {
+          if (
+            command === "/comandi"
+          ) {
 
-            await sock.sendMessage(
+            await sendQuickReply(
+              sock,
               chat,
-              {
-                text:
-                  "🤖 *COMANDI DISPONIBILI*\n\n" +
-                  "🏓 /ping\n" +
-                  "Controlla se il bot è online."
-              }
-            );
 
-            console.log(
-              "📋 Lista comandi inviata."
+              "🤖 COMANDI DISPONIBILI\n\n" +
+              "🏓 /ping\n" +
+              "Controlla se il bot è online.",
+
+              "/ping",
+
+              "/ping"
             );
 
             return;
           }
 
           // ======================================
-          // /PING
+          // /PING SCRITTO MANUALMENTE
           // ======================================
 
-          if (command === "/ping") {
+          if (
+            command === "/ping"
+          ) {
 
             await sock.sendMessage(
               chat,
               {
-                text:
-                  "🏓 Pong!"
+                text: "🏓 Pong!"
               }
-            );
-
-            console.log(
-              "🏓 Pong inviato."
             );
 
             return;
@@ -231,9 +425,7 @@ async function startWhatsApp() {
           );
 
           console.error(error);
-
         }
-
       }
     );
 
