@@ -2,9 +2,7 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  Browsers,
-  proto,
-  generateWAMessageFromContent
+  Browsers
 } = require("@whiskeysockets/baileys");
 
 const P = require("pino");
@@ -15,7 +13,7 @@ let currentQR = null;
 let starting = false;
 
 // ======================================================
-// QR CODE
+// QR
 // ======================================================
 
 function getQR() {
@@ -23,7 +21,7 @@ function getQR() {
 }
 
 // ======================================================
-// ESTRAI TESTO
+// TESTO MESSAGGIO
 // ======================================================
 
 function getMessageText(message) {
@@ -40,104 +38,83 @@ function getMessageText(message) {
 }
 
 // ======================================================
-// ESTRAI RISPOSTA DEL PULSANTE
+// RISPOSTA PULSANTE
 // ======================================================
 
-function getButtonResponse(message) {
+function getButtonId(message) {
   if (!message) return "";
 
-  // Native Flow / quick_reply
+  // Native Flow
   const nativeFlow =
     message.interactiveResponseMessage
       ?.nativeFlowResponseMessage;
 
   if (nativeFlow?.paramsJson) {
     try {
-      const params = JSON.parse(nativeFlow.paramsJson);
+      const params = JSON.parse(
+        nativeFlow.paramsJson
+      );
 
       return (
         params.id ||
         params.selected_id ||
-        params.button_id ||
         ""
       );
+
     } catch (error) {
       console.log(
-        "⚠️ Impossibile leggere paramsJson del pulsante."
+        "⚠️ Errore lettura pulsante:",
+        error.message
       );
     }
   }
 
-  // Formati alternativi
+  // Vecchi formati
   return (
-    message.buttonsResponseMessage?.selectedButtonId ||
-    message.templateButtonReplyMessage?.selectedId ||
+    message.buttonsResponseMessage
+      ?.selectedButtonId ||
+    message.templateButtonReplyMessage
+      ?.selectedId ||
     ""
   );
 }
 
 // ======================================================
-// INVIA MESSAGGIO CON PULSANTE /COMANDI
+// INVIA CIAO + PULSANTE
 // ======================================================
 
-async function sendWelcomeWithButton(sock, jid) {
-
-  const message = generateWAMessageFromContent(
-    jid,
-    proto.Message.fromObject({
-      viewOnceMessage: {
-        message: {
-          messageContextInfo: {
-            deviceListMetadata: {},
-            deviceListMetadataVersion: 2
-          },
-
-          interactiveMessage:
-            proto.Message.InteractiveMessage.fromObject({
-
-              body: {
-                text:
-                  "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
-              },
-
-              footer: {
-                text: "Seleziona un'opzione:"
-              },
-
-              nativeFlowMessage:
-                proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-
-                  buttons: [
-                    {
-                      name: "quick_reply",
-
-                      buttonParamsJson:
-                        JSON.stringify({
-                          display_text: "/comandi",
-                          id: "/comandi"
-                        })
-                    }
-                  ],
-
-                  messageParamsJson: ""
-                })
-            })
-        }
-      }
-    }),
-    {}
-  );
-
-  await sock.relayMessage(
-    jid,
-    message.message,
-    {
-      messageId: message.key.id
-    }
-  );
+async function sendWelcome(sock, jid) {
 
   console.log(
-    "✅ Ciao + pulsante /comandi inviati."
+    "📤 Invio messaggio interattivo..."
+  );
+
+  await sock.sendMessage(jid, {
+
+    text:
+      "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖",
+
+    footer:
+      "Seleziona un comando:",
+
+    interactiveButtons: [
+
+      {
+        name: "quick_reply",
+
+        buttonParamsJson:
+          JSON.stringify({
+            display_text: "/comandi",
+            id: "/comandi"
+          })
+      }
+
+    ]
+
+  });
+
+  console.log(
+    "✅ Messaggio interattivo inviato."
   );
 }
 
@@ -153,35 +130,42 @@ async function startWhatsApp() {
 
   try {
 
-    console.log("📱 Avvio WhatsApp...");
+    console.log(
+      "📱 Avvio WhatsApp..."
+    );
 
     const {
       state,
       saveCreds
-    } = await useMultiFileAuthState(
-      AUTH_FOLDER
-    );
+    } =
+      await useMultiFileAuthState(
+        AUTH_FOLDER
+      );
 
-    const sock = makeWASocket({
+    const sock =
+      makeWASocket({
 
-      auth: state,
+        auth: state,
 
-      logger: P({
-        level: "silent"
-      }),
+        logger: P({
+          level: "silent"
+        }),
 
-      browser:
-        Browsers.macOS("Google Chrome"),
+        browser:
+          Browsers.macOS(
+            "Google Chrome"
+          ),
 
-      printQRInTerminal: false,
+        printQRInTerminal: false,
 
-      markOnlineOnConnect: false,
+        markOnlineOnConnect: false,
 
-      syncFullHistory: false
-    });
+        syncFullHistory: false
+
+      });
 
     // ==================================================
-    // SALVA CREDENZIALI
+    // CREDENZIALI
     // ==================================================
 
     sock.ev.on(
@@ -190,7 +174,7 @@ async function startWhatsApp() {
     );
 
     // ==================================================
-    // STATO CONNESSIONE
+    // CONNESSIONE
     // ==================================================
 
     sock.ev.on(
@@ -222,8 +206,10 @@ async function startWhatsApp() {
           );
         }
 
-        // CONNESSO
-        if (connection === "open") {
+        // OPEN
+        if (
+          connection === "open"
+        ) {
 
           currentQR = null;
 
@@ -242,8 +228,10 @@ async function startWhatsApp() {
           starting = false;
         }
 
-        // DISCONNESSO
-        if (connection === "close") {
+        // CLOSE
+        if (
+          connection === "close"
+        ) {
 
           currentQR = null;
 
@@ -280,6 +268,7 @@ async function startWhatsApp() {
             startWhatsApp();
           }, 5000);
         }
+
       }
     );
 
@@ -318,11 +307,6 @@ async function startWhatsApp() {
             if (!message) continue;
 
             if (!message.message) {
-
-              console.log(
-                "⚠️ Messaggio senza contenuto."
-              );
-
               continue;
             }
 
@@ -332,13 +316,13 @@ async function startWhatsApp() {
             const fromMe =
               message.key.fromMe;
 
-            const normalText =
+            const text =
               getMessageText(
                 message.message
               ).trim();
 
-            const buttonResponse =
-              getButtonResponse(
+            const buttonId =
+              getButtonId(
                 message.message
               ).trim();
 
@@ -363,21 +347,21 @@ async function startWhatsApp() {
 
             console.log(
               "Testo:",
-              normalText ||
+              text ||
               "(nessun testo)"
             );
 
-            if (buttonResponse) {
+            if (buttonId) {
 
               console.log(
-                "🔘 PULSANTE PREMUTO:",
-                buttonResponse
+                "🔘 PULSANTE:",
+                buttonId
               );
             }
 
-            // ==================================================
-            // IGNORA MESSAGGI INVIATI DAL BOT
-            // ==================================================
+            // ------------------------------------------
+            // IGNORA BOT
+            // ------------------------------------------
 
             if (fromMe) {
 
@@ -388,22 +372,19 @@ async function startWhatsApp() {
               continue;
             }
 
-            if (!chat) continue;
+            if (!chat) {
+              continue;
+            }
 
             // ==================================================
             // COMANDO
             // ==================================================
 
             const command =
-              buttonResponse ||
-              normalText;
+              buttonId ||
+              text;
 
             if (!command) {
-
-              console.log(
-                "⚠️ Nessun comando riconosciuto."
-              );
-
               continue;
             }
 
@@ -453,10 +434,6 @@ async function startWhatsApp() {
               "/ping"
             ) {
 
-              console.log(
-                "🏓 /ping riconosciuto."
-              );
-
               await sock.sendMessage(
                 chat,
                 {
@@ -475,10 +452,6 @@ async function startWhatsApp() {
               command.toLowerCase() ===
               "/info"
             ) {
-
-              console.log(
-                "ℹ️ /info riconosciuto."
-              );
 
               await sock.sendMessage(
                 chat,
@@ -506,16 +479,40 @@ async function startWhatsApp() {
                 "👋 Ciao riconosciuto."
               );
 
-              await sendWelcomeWithButton(
-                sock,
-                chat
-              );
+              try {
+
+                await sendWelcome(
+                  sock,
+                  chat
+                );
+
+              } catch (error) {
+
+                console.error(
+                  "❌ ERRORE INVIO PULSANTE:"
+                );
+
+                console.error(
+                  error
+                );
+
+                // Fallback sicuro
+                await sock.sendMessage(
+                  chat,
+                  {
+                    text:
+                      "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖\n\n" +
+                      "Scrivi /comandi per vedere i comandi."
+                  }
+                );
+
+              }
 
               continue;
             }
 
             // ==================================================
-            // COMANDO NON RICONOSCIUTO
+            // NON RICONOSCIUTO
             // ==================================================
 
             console.log(
@@ -529,10 +526,14 @@ async function startWhatsApp() {
               "❌ Errore elaborazione messaggio:"
             );
 
-            console.error(error);
+            console.error(
+              error
+            );
 
           }
+
         }
+
       }
     );
 
@@ -542,14 +543,18 @@ async function startWhatsApp() {
       "❌ Errore avvio WhatsApp:"
     );
 
-    console.error(error);
+    console.error(
+      error
+    );
 
     starting = false;
 
     setTimeout(() => {
       startWhatsApp();
     }, 5000);
+
   }
+
 }
 
 // ======================================================
