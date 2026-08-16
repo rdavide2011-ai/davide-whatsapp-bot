@@ -44,7 +44,7 @@ async function startWhatsApp() {
     sock.ev.on("creds.update", saveCreds);
 
     // ==========================================
-    // CONNESSIONE WHATSAPP
+    // CONNESSIONE
     // ==========================================
 
     sock.ev.on("connection.update", async (update) => {
@@ -59,7 +59,6 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
-      // QR CODE
       if (qr) {
         currentQR = qr;
 
@@ -72,7 +71,6 @@ async function startWhatsApp() {
         );
       }
 
-      // WHATSAPP COLLEGATO
       if (connection === "open") {
         currentQR = null;
         starting = false;
@@ -90,7 +88,6 @@ async function startWhatsApp() {
         console.log("");
       }
 
-      // CONNESSIONE CHIUSA
       if (connection === "close") {
         currentQR = null;
         starting = false;
@@ -143,43 +140,60 @@ async function startWhatsApp() {
             message.key.remoteJid;
 
           // ======================================
-          // RISPOSTA AL PULSANTE CLASSICO
+          // RISPOSTA AL PULSANTE
           // ======================================
 
-          const buttonResponse =
-            message.message.buttonsResponseMessage;
+          const interactiveResponse =
+            message.message.interactiveResponseMessage;
 
-          if (buttonResponse) {
+          if (interactiveResponse) {
 
-            const buttonId =
-              buttonResponse.selectedButtonId;
+            try {
 
-            console.log(
-              `🔘 Pulsante premuto: ${buttonId}`
-            );
+              const params =
+                JSON.parse(
+                  interactiveResponse
+                    ?.nativeFlowResponseMessage
+                    ?.paramsJson || "{}"
+                );
 
-            // VEDI COMANDI
-            if (
-              buttonId === "vedi_comandi"
-            ) {
+              const buttonId =
+                params.id;
 
-              await sock.sendMessage(
-                chat,
-                {
-                  text:
-                    "🏓 !ping\n\n" +
-                    "Controlla se il bot è online."
-                }
+              console.log(
+                `🔘 Pulsante premuto: ${buttonId}`
               );
 
-              return;
+              if (
+                buttonId === "vedi_comandi"
+              ) {
+
+                await sock.sendMessage(
+                  chat,
+                  {
+                    text:
+                      "🏓 !ping\n\n" +
+                      "Controlla se il bot è online."
+                  }
+                );
+
+                return;
+              }
+
+            } catch (error) {
+
+              console.error(
+                "❌ Errore risposta pulsante:"
+              );
+
+              console.error(error);
             }
 
             return;
           }
 
           // ======================================
-          // TESTO NORMALE
+          // CIAO
           // ======================================
 
           const text =
@@ -193,54 +207,48 @@ async function startWhatsApp() {
             `📩 Messaggio ricevuto: ${text}`
           );
 
-          // ======================================
-          // CIAO
-          // ======================================
-
           if (
             text.trim().toLowerCase() === "ciao"
           ) {
 
             console.log(
-              "🔘 Invio pulsante classico..."
+              "🔘 Invio pulsante Vedi comandi..."
             );
 
             await sock.sendMessage(
               chat,
               {
-                text:
-                  "Ciao! 👋",
+                text: "Ciao! 👋",
 
                 footer:
                   "Davide WhatsApp Bot",
 
                 buttons: [
                   {
-                    buttonId:
-                      "vedi_comandi",
+                    name: "quick_reply",
 
-                    buttonText: {
-                      displayText:
-                        "📋 Vedi comandi"
-                    },
+                    buttonParamsJson:
+                      JSON.stringify({
+                        display_text:
+                          "📋 Vedi comandi",
 
-                    type: 1
+                        id:
+                          "vedi_comandi"
+                      })
                   }
-                ],
-
-                headerType: 1
+                ]
               }
             );
 
             console.log(
-              "✅ Pulsante inviato."
+              "✅ Messaggio con pulsante inviato."
             );
 
             return;
           }
 
           // ======================================
-          // !PING SCRITTO MANUALMENTE
+          // !PING
           // ======================================
 
           if (
@@ -250,8 +258,7 @@ async function startWhatsApp() {
             await sock.sendMessage(
               chat,
               {
-                text:
-                  "🏓 Pong!"
+                text: "🏓 Pong!"
               }
             );
 
@@ -265,9 +272,7 @@ async function startWhatsApp() {
           );
 
           console.error(error);
-
         }
-
       }
     );
 
