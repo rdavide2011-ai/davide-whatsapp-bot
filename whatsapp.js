@@ -11,8 +11,25 @@ const P = require("pino");
 
 const AUTH_FOLDER = "./auth_info";
 
+// ======================================================
+// VERSIONE BOT
+// ======================================================
+
+const BOT_VERSION = "1.0.1";
+
+// ======================================================
+// STATO BOT
+// ======================================================
+
 let currentQR = null;
 let starting = false;
+
+let whatsappConnected = false;
+
+let botStartTime = Date.now();
+
+let messagesReceived = 0;
+let messagesSent = 0;
 
 // ======================================================
 // QR CODE
@@ -23,10 +40,67 @@ function getQR() {
 }
 
 // ======================================================
+// UPTIME
+// ======================================================
+
+function getUptime() {
+
+  const seconds =
+    Math.floor(
+      (Date.now() - botStartTime) / 1000
+    );
+
+  const days =
+    Math.floor(seconds / 86400);
+
+  const hours =
+    Math.floor(
+      (seconds % 86400) / 3600
+    );
+
+  const minutes =
+    Math.floor(
+      (seconds % 3600) / 60
+    );
+
+  const secs =
+    seconds % 60;
+
+  const parts = [];
+
+  if (days > 0) {
+    parts.push(
+      `${days} ${days === 1 ? "giorno" : "giorni"}`
+    );
+  }
+
+  if (hours > 0) {
+    parts.push(
+      `${hours} ${hours === 1 ? "ora" : "ore"}`
+    );
+  }
+
+  if (minutes > 0) {
+    parts.push(
+      `${minutes} ${minutes === 1 ? "minuto" : "minuti"}`
+    );
+  }
+
+  if (secs > 0 || parts.length === 0) {
+    parts.push(
+      `${secs} ${secs === 1 ? "secondo" : "secondi"}`
+    );
+  }
+
+  return parts.join(", ");
+}
+
+// ======================================================
 // ESTRAI TESTO
 // ======================================================
 
 function getMessageText(message) {
+
   if (!message) return "";
 
   return (
@@ -44,6 +118,7 @@ function getMessageText(message) {
 // ======================================================
 
 function getButtonId(message) {
+
   if (!message) return "";
 
   const response =
@@ -52,10 +127,13 @@ function getButtonId(message) {
   if (
     response?.nativeFlowResponseMessage?.paramsJson
   ) {
+
     try {
-      const params = JSON.parse(
-        response.nativeFlowResponseMessage.paramsJson
-      );
+
+      const params =
+        JSON.parse(
+          response.nativeFlowResponseMessage.paramsJson
+        );
 
       return (
         params.id ||
@@ -64,10 +142,12 @@ function getButtonId(message) {
       );
 
     } catch (error) {
+
       console.log(
         "⚠️ Errore lettura risposta pulsante:",
         error.message
       );
+
     }
   }
 
@@ -83,6 +163,7 @@ function getButtonId(message) {
 // ======================================================
 
 function getPrivacyModeTs() {
+
   const offset = 77980457;
 
   return (
@@ -96,44 +177,70 @@ function getPrivacyModeTs() {
 // ======================================================
 
 function buildMixedNativeFlowBizNode() {
+
   return {
+
     tag: "biz",
 
     attrs: {
+
       actual_actors: "2",
+
       host_storage: "2",
-      privacy_mode_ts: getPrivacyModeTs()
+
+      privacy_mode_ts:
+        getPrivacyModeTs()
+
     },
 
     content: [
+
       {
+
         tag: "interactive",
 
         attrs: {
+
           type: "native_flow",
+
           v: "1"
+
         },
 
         content: [
+
           {
+
             tag: "native_flow",
 
             attrs: {
+
               v: "9",
+
               name: "mixed"
+
             }
+
           }
+
         ]
+
       },
 
       {
+
         tag: "quality_control",
 
         attrs: {
+
           source_type: "third_party"
+
         }
+
       }
+
     ]
+
   };
 }
 
@@ -141,14 +248,26 @@ function buildMixedNativeFlowBizNode() {
 // CREA PULSANTE
 // ======================================================
 
-function createQuickReplyButton(displayText, id) {
+function createQuickReplyButton(
+  displayText,
+  id
+) {
+
   return {
+
     name: "quick_reply",
 
-    buttonParamsJson: JSON.stringify({
-      display_text: displayText,
-      id: id
-    })
+    buttonParamsJson:
+      JSON.stringify({
+
+        display_text:
+          displayText,
+
+        id:
+          id
+
+      })
+
   };
 }
 
@@ -156,7 +275,10 @@ function createQuickReplyButton(displayText, id) {
 // INVIA BENVENUTO + /COMANDI
 // ======================================================
 
-async function sendWelcomeWithButton(sock, jid) {
+async function sendWelcomeWithButton(
+  sock,
+  jid
+) {
 
   console.log(
     "📤 Invio messaggio di benvenuto..."
@@ -173,7 +295,10 @@ async function sendWelcomeWithButton(sock, jid) {
 
       header:
         proto.Message.InteractiveMessage.Header.create({
-          hasMediaAttachment: false
+
+          hasMediaAttachment:
+            false
+
         }),
 
       body:
@@ -214,9 +339,11 @@ async function sendWelcomeWithButton(sock, jid) {
 
           ],
 
-          messageParamsJson: "{}",
+          messageParamsJson:
+            "{}",
 
-          messageVersion: 1
+          messageVersion:
+            1
 
         })
 
@@ -224,25 +351,33 @@ async function sendWelcomeWithButton(sock, jid) {
 
   const waMessage =
     generateWAMessageFromContent(
+
       jid,
+
       {
         interactiveMessage
       },
+
       {
         userJid:
           sock.user?.id
       }
+
     );
 
   const bizNode =
     buildMixedNativeFlowBizNode();
 
   const botNode = {
+
     tag: "bot",
 
     attrs: {
+
       biz_bot: "1"
+
     }
+
   };
 
   const isGroup =
@@ -254,15 +389,23 @@ async function sendWelcomeWithButton(sock, jid) {
       : [botNode, bizNode];
 
   await sock.relayMessage(
+
     jid,
+
     waMessage.message,
+
     {
+
       messageId:
         waMessage.key.id,
 
       additionalNodes
+
     }
+
   );
+
+  messagesSent++;
 
   console.log(
     "✅ Messaggio di benvenuto + /comandi inviato."
@@ -285,8 +428,8 @@ async function sendCommandsWithButtons(
   const buttons = [
 
     createQuickReplyButton(
-      "/ping",
-      "/ping"
+      "/stato",
+      "/stato"
     ),
 
     createQuickReplyButton(
@@ -295,8 +438,8 @@ async function sendCommandsWithButtons(
     ),
 
     createQuickReplyButton(
-      "ciao",
-      "ciao"
+      "/uptime",
+      "/uptime"
     )
 
   ];
@@ -306,26 +449,26 @@ async function sendCommandsWithButtons(
 
       header:
         proto.Message.InteractiveMessage.Header.create({
-          hasMediaAttachment: false
-        }),
 
-      // ==================================================
-      // DESCRIZIONE DEI PULSANTI
-      // ==================================================
+          hasMediaAttachment:
+            false
+
+        }),
 
       body:
         proto.Message.InteractiveMessage.Body.create({
 
           text:
+
             "🤖 *COMANDI BOT*\n\n" +
 
             "Scegli cosa vuoi fare:\n\n" +
 
-            "🏓 */ping* — Controlla se il bot è online.\n\n" +
+            "📊 */stato* — Mostra lo stato del bot, il numero di messaggi ricevuti e inviati.\n\n" +
 
-            "ℹ️ */info* — Mostra le informazioni del bot.\n\n" +
+            "ℹ️ */info* — Mostra le informazioni del bot e la versione attuale.\n\n" +
 
-            "👋 *ciao* — Riavvia il messaggio di benvenuto.\n\n" +
+            "🕐 */uptime* — Mostra da quanto tempo il bot è attivo.\n\n" +
 
             "👇 Premi uno dei pulsanti qui sotto."
 
@@ -335,20 +478,18 @@ async function sendCommandsWithButtons(
         proto.Message.InteractiveMessage.Footer.create({
 
           text:
-            "Davide WhatsApp Bot"
+            `Davide WhatsApp Bot • v${BOT_VERSION}`
 
         }),
-
-      // ==================================================
-      // I 3 PULSANTI
-      // ==================================================
 
       nativeFlowMessage:
         proto.Message.InteractiveMessage.NativeFlowMessage.create({
 
           buttons:
+
             buttons.map(
               (button) =>
+
                 proto.Message
                   .InteractiveMessage
                   .NativeFlowMessage
@@ -376,25 +517,33 @@ async function sendCommandsWithButtons(
 
   const waMessage =
     generateWAMessageFromContent(
+
       jid,
+
       {
         interactiveMessage
       },
+
       {
         userJid:
           sock.user?.id
       }
+
     );
 
   const bizNode =
     buildMixedNativeFlowBizNode();
 
   const botNode = {
+
     tag: "bot",
 
     attrs: {
+
       biz_bot: "1"
+
     }
+
   };
 
   const isGroup =
@@ -406,18 +555,26 @@ async function sendCommandsWithButtons(
       : [botNode, bizNode];
 
   await sock.relayMessage(
+
     jid,
+
     waMessage.message,
+
     {
+
       messageId:
         waMessage.key.id,
 
       additionalNodes
+
     }
+
   );
 
+  messagesSent++;
+
   console.log(
-    "✅ Pagina comandi con descrizioni + 3 pulsanti inviata."
+    "✅ Pagina comandi con 3 pulsanti inviata."
   );
 }
 
@@ -431,10 +588,14 @@ async function startWhatsApp() {
 
   starting = true;
 
+  botStartTime = Date.now();
+
   try {
 
     console.log(
-      "📱 Avvio WhatsApp..."
+      "📱 Avvio WhatsApp Bot v" +
+      BOT_VERSION +
+      "..."
     );
 
     const {
@@ -469,6 +630,7 @@ async function startWhatsApp() {
 
         syncFullHistory:
           false
+
       });
 
     // ==================================================
@@ -500,6 +662,7 @@ async function startWhatsApp() {
           "waiting"
         );
 
+        // QR
         if (qr) {
 
           currentQR =
@@ -512,7 +675,12 @@ async function startWhatsApp() {
           console.log(
             "🌐 Apri la pagina del bot per scansionarlo."
           );
+
         }
+
+        // ==================================================
+        // CONNESSO
+        // ==================================================
 
         if (
           connection ===
@@ -522,21 +690,37 @@ async function startWhatsApp() {
           currentQR =
             null;
 
+          whatsappConnected =
+            true;
+
           console.log("");
           console.log(
             "=========================================="
           );
+
           console.log(
             "        ✅ WHATSAPP COLLEGATO"
           );
+
+          console.log(
+            "        📦 VERSIONE: " +
+            BOT_VERSION
+          );
+
           console.log(
             "=========================================="
           );
+
           console.log("");
 
           starting =
             false;
+
         }
+
+        // ==================================================
+        // DISCONNESSO
+        // ==================================================
 
         if (
           connection ===
@@ -545,6 +729,9 @@ async function startWhatsApp() {
 
           currentQR =
             null;
+
+          whatsappConnected =
+            false;
 
           const statusCode =
             lastDisconnect
@@ -570,6 +757,7 @@ async function startWhatsApp() {
             );
 
             return;
+
           }
 
           console.log(
@@ -578,11 +766,15 @@ async function startWhatsApp() {
 
           setTimeout(
             () => {
+
               startWhatsApp();
+
             },
             5000
           );
+
         }
+
       }
     );
 
@@ -671,10 +863,11 @@ async function startWhatsApp() {
                 "🔘 PULSANTE PREMUTO:",
                 buttonId
               );
+
             }
 
             // ------------------------------------------
-            // IGNORA BOT
+            // IGNORA MESSAGGI DEL BOT
             // ------------------------------------------
 
             if (fromMe) {
@@ -684,10 +877,21 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
             if (!chat)
               continue;
+
+            // ------------------------------------------
+            // CONTA MESSAGGIO RICEVUTO
+            // ------------------------------------------
+
+            messagesReceived++;
+
+            // ------------------------------------------
+            // COMANDO
+            // ------------------------------------------
 
             const command =
               buttonId ||
@@ -720,31 +924,52 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
             // ==================================================
-            // /PING
+            // /STATO
             // ==================================================
 
             if (
               command.toLowerCase() ===
-              "/ping"
+              "/stato"
             ) {
 
               console.log(
-                "🏓 /ping riconosciuto."
+                "📊 /stato riconosciuto."
               );
+
+              const stato =
+                whatsappConnected
+                  ? "🟢 Connesso"
+                  : "🔴 Disconnesso";
 
               await sock.sendMessage(
                 chat,
                 {
+
                   text:
-                    "🏓 *Pong!*\n\n" +
-                    "✅ Il bot è online e funzionante."
+
+                    "📊 *STATO BOT*\n\n" +
+
+                    `📡 WhatsApp: ${stato}\n` +
+
+                    `📦 Versione: ${BOT_VERSION}\n` +
+
+                    `📥 Messaggi ricevuti: ${messagesReceived}\n` +
+
+                    `📤 Messaggi inviati: ${messagesSent}\n` +
+
+                    `🕐 Uptime: ${getUptime()}`
+
                 }
               );
 
+              messagesSent++;
+
               continue;
+
             }
 
             // ==================================================
@@ -763,15 +988,64 @@ async function startWhatsApp() {
               await sock.sendMessage(
                 chat,
                 {
+
                   text:
-                    "🤖 *Davide WhatsApp Bot*\n\n" +
-                    "🟢 Stato: Online\n" +
-                    "⚡ Powered by Baileys\n\n" +
-                    "Il bot è attivo e pronto a ricevere comandi."
+
+                    "ℹ️ *INFORMAZIONI BOT*\n\n" +
+
+                    "🤖 Nome: Davide WhatsApp Bot\n" +
+
+                    `📦 Versione: ${BOT_VERSION}\n` +
+
+                    "⚡ Motore: Baileys\n" +
+
+                    `📡 WhatsApp: ${
+                      whatsappConnected
+                        ? "Connesso 🟢"
+                        : "Disconnesso 🔴"
+                    }\n\n` +
+
+                    "Il bot è sviluppato per automatizzare le risposte su WhatsApp."
+
                 }
               );
 
+              messagesSent++;
+
               continue;
+
+            }
+
+            // ==================================================
+            // /UPTIME
+            // ==================================================
+
+            if (
+              command.toLowerCase() ===
+              "/uptime"
+            ) {
+
+              console.log(
+                "🕐 /uptime riconosciuto."
+              );
+
+              await sock.sendMessage(
+                chat,
+                {
+
+                  text:
+
+                    "🕐 *UPTIME BOT*\n\n" +
+
+                    `Il bot è attivo da:\n*${getUptime()}*`
+
+                }
+              );
+
+              messagesSent++;
+
+              continue;
+
             }
 
             // ==================================================
@@ -803,10 +1077,16 @@ async function startWhatsApp() {
                 console.error(
                   error
                 );
+
               }
 
               continue;
+
             }
+
+            // ==================================================
+            // COMANDO NON RICONOSCIUTO
+            // ==================================================
 
             console.log(
               "ℹ️ Comando non riconosciuto:",
@@ -822,8 +1102,11 @@ async function startWhatsApp() {
             console.error(
               error
             );
+
           }
+
         }
+
       }
     );
 
@@ -840,13 +1123,20 @@ async function startWhatsApp() {
     starting =
       false;
 
+    whatsappConnected =
+      false;
+
     setTimeout(
       () => {
+
         startWhatsApp();
+
       },
       5000
     );
+
   }
+
 }
 
 // ======================================================
