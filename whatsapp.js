@@ -138,7 +138,7 @@ function buildMixedNativeFlowBizNode() {
 }
 
 // ======================================================
-// CREA PULSANTE NATIVE FLOW
+// CREA PULSANTE
 // ======================================================
 
 function createQuickReplyButton(displayText, id) {
@@ -153,13 +153,13 @@ function createQuickReplyButton(displayText, id) {
 }
 
 // ======================================================
-// INVIA MESSAGGIO DI BENVENUTO
+// INVIA BENVENUTO + /COMANDI
 // ======================================================
 
 async function sendWelcomeWithButton(sock, jid) {
 
   console.log(
-    "📤 Creazione messaggio di benvenuto..."
+    "📤 Invio messaggio di benvenuto..."
   );
 
   const button =
@@ -224,18 +224,14 @@ async function sendWelcomeWithButton(sock, jid) {
 
   const waMessage =
     generateWAMessageFromContent(
-
       jid,
-
       {
         interactiveMessage
       },
-
       {
         userJid:
           sock.user?.id
       }
-
     );
 
   const bizNode =
@@ -258,18 +254,14 @@ async function sendWelcomeWithButton(sock, jid) {
       : [botNode, bizNode];
 
   await sock.relayMessage(
-
     jid,
-
     waMessage.message,
-
     {
       messageId:
         waMessage.key.id,
 
       additionalNodes
     }
-
   );
 
   console.log(
@@ -278,7 +270,7 @@ async function sendWelcomeWithButton(sock, jid) {
 }
 
 // ======================================================
-// INVIA PAGINA COMANDI CON 3 PULSANTI
+// INVIA PAGINA COMANDI
 // ======================================================
 
 async function sendCommandsWithButtons(
@@ -317,13 +309,25 @@ async function sendCommandsWithButtons(
           hasMediaAttachment: false
         }),
 
+      // ==================================================
+      // DESCRIZIONE DEI PULSANTI
+      // ==================================================
+
       body:
         proto.Message.InteractiveMessage.Body.create({
 
           text:
             "🤖 *COMANDI BOT*\n\n" +
-            "Ecco cosa puoi fare con il bot.\n" +
-            "Premi uno dei pulsanti qui sotto per eseguire direttamente il comando."
+
+            "Scegli cosa vuoi fare:\n\n" +
+
+            "🏓 */ping* — Controlla se il bot è online.\n\n" +
+
+            "ℹ️ */info* — Mostra le informazioni del bot.\n\n" +
+
+            "👋 *ciao* — Riavvia il messaggio di benvenuto.\n\n" +
+
+            "👇 Premi uno dei pulsanti qui sotto."
 
         }),
 
@@ -335,30 +339,36 @@ async function sendCommandsWithButtons(
 
         }),
 
+      // ==================================================
+      // I 3 PULSANTI
+      // ==================================================
+
       nativeFlowMessage:
         proto.Message.InteractiveMessage.NativeFlowMessage.create({
 
-          buttons: buttons.map((button) =>
+          buttons:
+            buttons.map(
+              (button) =>
+                proto.Message
+                  .InteractiveMessage
+                  .NativeFlowMessage
+                  .NativeFlowButton
+                  .create({
 
-            proto.Message
-              .InteractiveMessage
-              .NativeFlowMessage
-              .NativeFlowButton
-              .create({
+                    name:
+                      button.name,
 
-                name:
-                  button.name,
+                    buttonParamsJson:
+                      button.buttonParamsJson
 
-                buttonParamsJson:
-                  button.buttonParamsJson
+                  })
+            ),
 
-              })
+          messageParamsJson:
+            "{}",
 
-          ),
-
-          messageParamsJson: "{}",
-
-          messageVersion: 1
+          messageVersion:
+            1
 
         })
 
@@ -366,18 +376,14 @@ async function sendCommandsWithButtons(
 
   const waMessage =
     generateWAMessageFromContent(
-
       jid,
-
       {
         interactiveMessage
       },
-
       {
         userJid:
           sock.user?.id
       }
-
     );
 
   const bizNode =
@@ -400,22 +406,18 @@ async function sendCommandsWithButtons(
       : [botNode, bizNode];
 
   await sock.relayMessage(
-
     jid,
-
     waMessage.message,
-
     {
       messageId:
         waMessage.key.id,
 
       additionalNodes
     }
-
   );
 
   console.log(
-    "✅ Pagina comandi con 3 pulsanti inviata."
+    "✅ Pagina comandi con descrizioni + 3 pulsanti inviata."
   );
 }
 
@@ -446,7 +448,8 @@ async function startWhatsApp() {
     const sock =
       makeWASocket({
 
-        auth: state,
+        auth:
+          state,
 
         logger:
           P({
@@ -466,7 +469,6 @@ async function startWhatsApp() {
 
         syncFullHistory:
           false
-
       });
 
     // ==================================================
@@ -498,7 +500,6 @@ async function startWhatsApp() {
           "waiting"
         );
 
-        // QR
         if (qr) {
 
           currentQR =
@@ -513,7 +514,6 @@ async function startWhatsApp() {
           );
         }
 
-        // OPEN
         if (
           connection ===
           "open"
@@ -538,7 +538,6 @@ async function startWhatsApp() {
             false;
         }
 
-        // CLOSE
         if (
           connection ===
           "close"
@@ -584,7 +583,6 @@ async function startWhatsApp() {
             5000
           );
         }
-
       }
     );
 
@@ -673,11 +671,10 @@ async function startWhatsApp() {
                 "🔘 PULSANTE PREMUTO:",
                 buttonId
               );
-
             }
 
             // ------------------------------------------
-            // IGNORA MESSAGGI DEL BOT
+            // IGNORA BOT
             // ------------------------------------------
 
             if (fromMe) {
@@ -691,10 +688,6 @@ async function startWhatsApp() {
 
             if (!chat)
               continue;
-
-            // ------------------------------------------
-            // COMANDO
-            // ------------------------------------------
 
             const command =
               buttonId ||
@@ -746,7 +739,7 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    "🏓 Pong!\n\n" +
+                    "🏓 *Pong!*\n\n" +
                     "✅ Il bot è online e funzionante."
                 }
               );
@@ -770,13 +763,11 @@ async function startWhatsApp() {
               await sock.sendMessage(
                 chat,
                 {
-
                   text:
                     "🤖 *Davide WhatsApp Bot*\n\n" +
                     "🟢 Stato: Online\n" +
                     "⚡ Powered by Baileys\n\n" +
                     "Il bot è attivo e pronto a ricevere comandi."
-
                 }
               );
 
@@ -812,15 +803,10 @@ async function startWhatsApp() {
                 console.error(
                   error
                 );
-
               }
 
               continue;
             }
-
-            // ==================================================
-            // COMANDO NON RICONOSCIUTO
-            // ==================================================
 
             console.log(
               "ℹ️ Comando non riconosciuto:",
@@ -836,11 +822,8 @@ async function startWhatsApp() {
             console.error(
               error
             );
-
           }
-
         }
-
       }
     );
 
@@ -863,9 +846,7 @@ async function startWhatsApp() {
       },
       5000
     );
-
   }
-
 }
 
 // ======================================================
