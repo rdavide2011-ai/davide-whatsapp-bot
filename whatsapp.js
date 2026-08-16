@@ -12,9 +12,17 @@ const AUTH_FOLDER = "./auth_info";
 let currentQR = null;
 let starting = false;
 
+// ======================================================
+// QR
+// ======================================================
+
 function getQR() {
   return currentQR;
 }
+
+// ======================================================
+// ESTRAZIONE TESTO
+// ======================================================
 
 function getMessageText(message) {
   if (!message) return "";
@@ -28,6 +36,10 @@ function getMessageText(message) {
     ""
   );
 }
+
+// ======================================================
+// AVVIO WHATSAPP
+// ======================================================
 
 async function startWhatsApp() {
   if (starting) return;
@@ -57,13 +69,13 @@ async function startWhatsApp() {
     });
 
     // ==================================================
-    // SALVATAGGIO SESSIONE
+    // SALVA CREDENZIALI
     // ==================================================
 
     sock.ev.on("creds.update", saveCreds);
 
     // ==================================================
-    // STATO CONNESSIONE
+    // CONNESSIONE
     // ==================================================
 
     sock.ev.on("connection.update", async (update) => {
@@ -79,7 +91,7 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
-      // QR
+      // QR DISPONIBILE
       if (qr) {
 
         currentQR = qr;
@@ -113,7 +125,7 @@ async function startWhatsApp() {
         starting = false;
       }
 
-      // CHIUSO
+      // DISCONNESSO
       if (connection === "close") {
 
         currentQR = null;
@@ -150,37 +162,7 @@ async function startWhatsApp() {
     });
 
     // ==================================================
-    // DIAGNOSTICA SOCKET
-    // ==================================================
-
-    if (sock.ws) {
-
-      sock.ws.on("CB:message", (node) => {
-
-        console.log("");
-        console.log(
-          "📡 MESSAGGIO RICEVUTO DAL SOCKET WHATSAPP"
-        );
-
-        try {
-
-          console.log(
-            JSON.stringify(node)
-          );
-
-        } catch (error) {
-
-          console.log(
-            "⚠️ Impossibile mostrare il contenuto del nodo."
-          );
-
-        }
-      });
-
-    }
-
-    // ==================================================
-    // MESSAGGI BAILEYS
+    // MESSAGGI
     // ==================================================
 
     sock.ev.on(
@@ -217,6 +199,17 @@ async function startWhatsApp() {
               continue;
             }
 
+            const chat =
+              message.key.remoteJid;
+
+            const fromMe =
+              message.key.fromMe;
+
+            const text =
+              getMessageText(
+                message.message
+              ).trim();
+
             console.log("");
             console.log(
               "=========================================="
@@ -228,18 +221,13 @@ async function startWhatsApp() {
 
             console.log(
               "JID:",
-              message.key.remoteJid
+              chat
             );
 
             console.log(
               "Da me:",
-              message.key.fromMe
+              fromMe
             );
-
-            const text =
-              getMessageText(
-                message.message
-              ).trim();
 
             console.log(
               "Testo:",
@@ -247,10 +235,10 @@ async function startWhatsApp() {
             );
 
             // ------------------------------------------
-            // IGNORA I MESSAGGI DEL BOT
+            // IGNORA I MESSAGGI INVIATI DAL BOT
             // ------------------------------------------
 
-            if (message.key.fromMe) {
+            if (fromMe) {
 
               console.log(
                 "↩️ Messaggio inviato dal bot. Ignorato."
@@ -259,21 +247,7 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ------------------------------------------
-            // CHAT
-            // ------------------------------------------
-
-            const chat =
-              message.key.remoteJid;
-
-            if (!chat) {
-
-              console.log(
-                "⚠️ Chat non identificata."
-              );
-
-              continue;
-            }
+            if (!chat) continue;
 
             if (!text) {
 
@@ -290,39 +264,6 @@ async function startWhatsApp() {
             );
 
             // ==================================================
-            // MESSAGGIO CITATO
-            // ==================================================
-
-            const contextInfo =
-              message.message.extendedTextMessage
-                ?.contextInfo ||
-              message.message.imageMessage
-                ?.contextInfo ||
-              message.message.videoMessage
-                ?.contextInfo ||
-              message.message.documentMessage
-                ?.contextInfo;
-
-            const quotedMessage =
-              contextInfo?.quotedMessage || null;
-
-            const quotedText =
-              getMessageText(
-                quotedMessage
-              ).trim();
-
-            if (quotedMessage) {
-
-              console.log(
-                "↩️ MESSAGGIO CITATO:"
-              );
-
-              console.log(
-                quotedText || "(senza testo)"
-              );
-            }
-
-            // ==================================================
             // /COMANDI
             // ==================================================
 
@@ -330,30 +271,24 @@ async function startWhatsApp() {
               text.toLowerCase() === "/comandi"
             ) {
 
-              if (!quotedMessage) {
+              console.log(
+                "🤖 Comando /comandi riconosciuto."
+              );
 
-                await sock.sendMessage(chat, {
-                  text:
-                    "🤖 *COMANDI BOT*\n\n" +
-                    "• /comandi\n" +
-                    "• /ping\n" +
-                    "• /info\n\n" +
-                    "Puoi anche rispondere a un messaggio con /comandi."
-                });
+              await sock.sendMessage(chat, {
 
-              } else {
+                text:
+                  "🤖 *COMANDI BOT*\n\n" +
+                  "• /comandi — Mostra questo messaggio\n" +
+                  "• /ping — Controlla se il bot è online\n" +
+                  "• /info — Mostra le informazioni del bot\n" +
+                  "• ciao — Saluta il bot"
 
-                await sock.sendMessage(chat, {
-                  text:
-                    "🎯 *MESSAGGIO SELEZIONATO*\n\n" +
-                    (
-                      quotedText
-                        ? `💬 ${quotedText}`
-                        : "💬 Il messaggio citato non contiene testo."
-                    )
-                });
+              });
 
-              }
+              console.log(
+                "✅ Risposta /comandi inviata."
+              );
 
               continue;
             }
@@ -365,6 +300,10 @@ async function startWhatsApp() {
             if (
               text.toLowerCase() === "/ping"
             ) {
+
+              console.log(
+                "🏓 Comando /ping riconosciuto."
+              );
 
               await sock.sendMessage(chat, {
                 text: "🏓 Pong!"
@@ -381,11 +320,17 @@ async function startWhatsApp() {
               text.toLowerCase() === "/info"
             ) {
 
+              console.log(
+                "ℹ️ Comando /info riconosciuto."
+              );
+
               await sock.sendMessage(chat, {
+
                 text:
                   "🤖 *Davide WhatsApp Bot*\n\n" +
                   "🟢 Stato: Online\n" +
-                  "⚡ Baileys"
+                  "⚡ Powered by Baileys"
+
               });
 
               continue;
@@ -399,20 +344,26 @@ async function startWhatsApp() {
               text.toLowerCase() === "ciao"
             ) {
 
+              console.log(
+                "👋 Comando Ciao riconosciuto."
+              );
+
               await sock.sendMessage(chat, {
+
                 text:
                   "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
+
               });
 
               continue;
             }
 
-            console.log(
-              "ℹ️ Nessun comando associato."
-            );
+            // ==================================================
+            // NESSUN COMANDO
+            // ==================================================
 
             console.log(
-              "=========================================="
+              "ℹ️ Nessun comando associato."
             );
 
           } catch (error) {
@@ -424,9 +375,7 @@ async function startWhatsApp() {
             console.error(error);
 
           }
-
         }
-
       }
     );
 
@@ -445,6 +394,10 @@ async function startWhatsApp() {
     }, 5000);
   }
 }
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = {
   startWhatsApp,
