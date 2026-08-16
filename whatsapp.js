@@ -86,10 +86,6 @@ async function sendQuickReply(
     `🔘 Preparazione pulsante: ${buttonId}`
   );
 
-  // ------------------------------------------
-  // PULSANTE
-  // ------------------------------------------
-
   const nativeFlowButton =
     proto.Message
       .InteractiveMessage
@@ -104,10 +100,6 @@ async function sendQuickReply(
             id: buttonId
           })
       });
-
-  // ------------------------------------------
-  // MESSAGGIO INTERATTIVO
-  // ------------------------------------------
 
   const interactiveMessage =
     proto.Message.InteractiveMessage.create({
@@ -138,10 +130,6 @@ async function sendQuickReply(
           })
     });
 
-  // ------------------------------------------
-  // CREA MESSAGGIO WHATSAPP
-  // ------------------------------------------
-
   const waMessage =
     generateWAMessageFromContent(
       jid,
@@ -152,16 +140,10 @@ async function sendQuickReply(
       },
 
       {
-        // IMPORTANTE:
-        // deve essere il BOT, non il destinatario
         userJid:
           sock.user.id
       }
     );
-
-  // ------------------------------------------
-  // NODI NECESSARI A WHATSAPP
-  // ------------------------------------------
 
   const bizNode =
     buildMixedNativeFlowBizNode();
@@ -189,10 +171,6 @@ async function sendQuickReply(
       bizNode
     ];
   }
-
-  // ------------------------------------------
-  // INVIO
-  // ------------------------------------------
 
   await sock.relayMessage(
     jid,
@@ -447,7 +425,7 @@ async function startWhatsApp() {
                   "🤖 COMANDI DISPONIBILI\n\n" +
                   "Premi il pulsante qui sotto per eseguire il comando.",
 
-                  "🏓 /ping",
+                  "/ping",
 
                   "/ping"
                 );
@@ -535,7 +513,7 @@ async function startWhatsApp() {
               "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖\n\n" +
               "Premi il pulsante qui sotto per vedere i comandi.",
 
-              "📋 /comandi",
+              "/comandi",
 
               "/comandi"
             );
@@ -558,7 +536,7 @@ async function startWhatsApp() {
               "🤖 COMANDI DISPONIBILI\n\n" +
               "Premi il pulsante qui sotto per eseguire il comando.",
 
-              "🏓 /ping",
+              "/ping",
 
               "/ping"
             );
