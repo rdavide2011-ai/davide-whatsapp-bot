@@ -13,7 +13,7 @@ let currentQR = null;
 let starting = false;
 
 // ======================================================
-// QR
+// QR CODE
 // ======================================================
 
 function getQR() {
@@ -21,7 +21,7 @@ function getQR() {
 }
 
 // ======================================================
-// ESTRAZIONE TESTO
+// ESTRAI TESTO NORMALE
 // ======================================================
 
 function getMessageText(message) {
@@ -33,6 +33,20 @@ function getMessageText(message) {
     message.imageMessage?.caption ||
     message.videoMessage?.caption ||
     message.documentMessage?.caption ||
+    ""
+  );
+}
+
+// ======================================================
+// ESTRAI EVENTUALE PULSANTE
+// ======================================================
+
+function getButtonId(message) {
+  if (!message) return "";
+
+  return (
+    message.buttonsResponseMessage?.selectedButtonId ||
+    message.templateButtonReplyMessage?.selectedId ||
     ""
   );
 }
@@ -91,7 +105,7 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
-      // QR DISPONIBILE
+      // QR
       if (qr) {
 
         currentQR = qr;
@@ -205,8 +219,13 @@ async function startWhatsApp() {
             const fromMe =
               message.key.fromMe;
 
-            const text =
+            const normalText =
               getMessageText(
+                message.message
+              ).trim();
+
+            const buttonId =
+              getButtonId(
                 message.message
               ).trim();
 
@@ -231,11 +250,20 @@ async function startWhatsApp() {
 
             console.log(
               "Testo:",
-              text || "(nessun testo)"
+              normalText || "(nessun testo)"
             );
 
+            if (buttonId) {
+
+              console.log(
+                "🔘 PULSANTE PREMUTO:",
+                buttonId
+              );
+
+            }
+
             // ------------------------------------------
-            // IGNORA I MESSAGGI INVIATI DAL BOT
+            // IGNORA MESSAGGI DEL BOT
             // ------------------------------------------
 
             if (fromMe) {
@@ -249,18 +277,26 @@ async function startWhatsApp() {
 
             if (!chat) continue;
 
-            if (!text) {
+            // ==================================================
+            // DETERMINA IL COMANDO
+            // ==================================================
+
+            const command =
+              buttonId ||
+              normalText;
+
+            if (!command) {
 
               console.log(
-                "⚠️ Messaggio senza testo."
+                "⚠️ Nessun testo o pulsante riconosciuto."
               );
 
               continue;
             }
 
             console.log(
-              "📩 Messaggio ricevuto:",
-              text
+              "🎯 Comando:",
+              command
             );
 
             // ==================================================
@@ -268,18 +304,18 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              text.toLowerCase() === "/comandi"
+              command.toLowerCase() === "/comandi"
             ) {
 
               console.log(
-                "🤖 Comando /comandi riconosciuto."
+                "🤖 /comandi riconosciuto."
               );
 
               await sock.sendMessage(chat, {
 
                 text:
                   "🤖 *COMANDI BOT*\n\n" +
-                  "• /comandi — Mostra questo messaggio\n" +
+                  "• /comandi — Mostra i comandi\n" +
                   "• /ping — Controlla se il bot è online\n" +
                   "• /info — Mostra le informazioni del bot\n" +
                   "• ciao — Saluta il bot"
@@ -287,7 +323,7 @@ async function startWhatsApp() {
               });
 
               console.log(
-                "✅ Risposta /comandi inviata."
+                "✅ Lista comandi inviata."
               );
 
               continue;
@@ -298,11 +334,11 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              text.toLowerCase() === "/ping"
+              command.toLowerCase() === "/ping"
             ) {
 
               console.log(
-                "🏓 Comando /ping riconosciuto."
+                "🏓 /ping riconosciuto."
               );
 
               await sock.sendMessage(chat, {
@@ -317,11 +353,11 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              text.toLowerCase() === "/info"
+              command.toLowerCase() === "/info"
             ) {
 
               console.log(
-                "ℹ️ Comando /info riconosciuto."
+                "ℹ️ /info riconosciuto."
               );
 
               await sock.sendMessage(chat, {
@@ -341,19 +377,65 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              text.toLowerCase() === "ciao"
+              command.toLowerCase() === "ciao"
             ) {
 
               console.log(
-                "👋 Comando Ciao riconosciuto."
+                "👋 Ciao riconosciuto."
               );
 
-              await sock.sendMessage(chat, {
+              // ------------------------------------------
+              // MESSAGGIO CON PULSANTE
+              // ------------------------------------------
 
-                text:
-                  "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
+              try {
 
-              });
+                await sock.sendMessage(chat, {
+
+                  text:
+                    "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖",
+
+                  buttons: [
+
+                    {
+                      buttonId: "/comandi",
+                      buttonText: {
+                        displayText: "/comandi"
+                      },
+                      type: 1
+                    }
+
+                  ],
+
+                  headerType: 1
+
+                });
+
+                console.log(
+                  "✅ Messaggio Ciao + pulsante inviato."
+                );
+
+              } catch (buttonError) {
+
+                console.error(
+                  "❌ Errore invio pulsante:"
+                );
+
+                console.error(buttonError);
+
+                // Fallback: se WhatsApp rifiuta
+                // il messaggio interattivo,
+                // manda comunque il normale Ciao.
+
+                await sock.sendMessage(chat, {
+
+                  text:
+                    "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖\n\n" +
+                    "Scrivi /comandi per vedere i comandi."
+
+                });
+
+              }
 
               continue;
             }
@@ -363,7 +445,8 @@ async function startWhatsApp() {
             // ==================================================
 
             console.log(
-              "ℹ️ Nessun comando associato."
+              "ℹ️ Comando non riconosciuto:",
+              command
             );
 
           } catch (error) {
