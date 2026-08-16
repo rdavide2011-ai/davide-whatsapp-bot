@@ -12,15 +12,10 @@ const AUTH_FOLDER = "./auth_info";
 let currentQR = null;
 let starting = false;
 
-// ======================================================
-// FUNZIONI UTILI
-// ======================================================
-
 function getQR() {
   return currentQR;
 }
 
-// Estrae il testo da un messaggio WhatsApp
 function getMessageText(message) {
   if (!message) return "";
 
@@ -33,10 +28,6 @@ function getMessageText(message) {
     ""
   );
 }
-
-// ======================================================
-// AVVIO WHATSAPP
-// ======================================================
 
 async function startWhatsApp() {
   if (starting) return;
@@ -60,8 +51,14 @@ async function startWhatsApp() {
 
       printQRInTerminal: false,
 
-      markOnlineOnConnect: false
+      markOnlineOnConnect: false,
+
+      syncFullHistory: false
     });
+
+    // ==================================================
+    // SALVATAGGIO SESSIONE
+    // ==================================================
 
     sock.ev.on("creds.update", saveCreds);
 
@@ -70,6 +67,7 @@ async function startWhatsApp() {
     // ==================================================
 
     sock.ev.on("connection.update", async (update) => {
+
       const {
         connection,
         lastDisconnect,
@@ -81,11 +79,9 @@ async function startWhatsApp() {
         connection || "waiting"
       );
 
-      // -------------------------------
       // QR
-      // -------------------------------
-
       if (qr) {
+
         currentQR = qr;
 
         console.log(
@@ -97,11 +93,9 @@ async function startWhatsApp() {
         );
       }
 
-      // -------------------------------
       // CONNESSO
-      // -------------------------------
-
       if (connection === "open") {
+
         currentQR = null;
 
         console.log("");
@@ -119,11 +113,9 @@ async function startWhatsApp() {
         starting = false;
       }
 
-      // -------------------------------
-      // DISCONNESSO
-      // -------------------------------
-
+      // CHIUSO
       if (connection === "close") {
+
         currentQR = null;
 
         const statusCode =
@@ -139,8 +131,9 @@ async function startWhatsApp() {
         if (
           statusCode === DisconnectReason.loggedOut
         ) {
+
           console.log(
-            "🚪 WhatsApp ha effettuato il logout."
+            "🚪 Sessione WhatsApp disconnessa."
           );
 
           return;
@@ -157,186 +150,280 @@ async function startWhatsApp() {
     });
 
     // ==================================================
-    // MESSAGGI
+    // DIAGNOSTICA SOCKET
+    // ==================================================
+
+    if (sock.ws) {
+
+      sock.ws.on("CB:message", (node) => {
+
+        console.log("");
+        console.log(
+          "📡 MESSAGGIO RICEVUTO DAL SOCKET WHATSAPP"
+        );
+
+        try {
+
+          console.log(
+            JSON.stringify(node)
+          );
+
+        } catch (error) {
+
+          console.log(
+            "⚠️ Impossibile mostrare il contenuto del nodo."
+          );
+
+        }
+      });
+
+    }
+
+    // ==================================================
+    // MESSAGGI BAILEYS
     // ==================================================
 
     sock.ev.on(
       "messages.upsert",
-      async ({ messages }) => {
+      async ({ messages, type }) => {
 
-        try {
+        console.log("");
+        console.log(
+          "📨 EVENTO messages.upsert RICEVUTO"
+        );
 
-          const message = messages[0];
+        console.log(
+          "Tipo:",
+          type
+        );
 
-          if (!message) return;
-          if (!message.message) return;
+        console.log(
+          "Numero messaggi:",
+          messages.length
+        );
 
-          // Ignora i messaggi inviati dal bot
-          if (message.key.fromMe) return;
+        for (const message of messages) {
 
-          const text =
-            getMessageText(message).trim();
+          try {
 
-          if (!text) return;
+            if (!message) continue;
 
-          const chat =
-            message.key.remoteJid;
+            if (!message.message) {
 
-          console.log("");
-          console.log(
-            "📩 Messaggio ricevuto:",
-            text
-          );
+              console.log(
+                "⚠️ Messaggio senza contenuto."
+              );
 
-          // ==================================================
-          // CONTROLLO MESSAGGIO CITATO
-          // ==================================================
+              continue;
+            }
 
-          const contextInfo =
-            message.message.extendedTextMessage
-              ?.contextInfo ||
-            message.message.imageMessage
-              ?.contextInfo ||
-            message.message.videoMessage
-              ?.contextInfo ||
-            message.message.documentMessage
-              ?.contextInfo;
-
-          const quotedMessage =
-            contextInfo?.quotedMessage || null;
-
-          const quotedText =
-            getMessageText(quotedMessage).trim();
-
-          const isReply =
-            !!quotedMessage;
-
-          // ==================================================
-          // LOG DEL MESSAGGIO CITATO
-          // ==================================================
-
-          if (isReply) {
-
+            console.log("");
             console.log(
-              "↩️ Questo messaggio è una risposta."
+              "=========================================="
             );
 
             console.log(
-              "💬 Messaggio citato:",
-              quotedText || "(senza testo)"
+              "📩 NUOVO MESSAGGIO"
             );
 
-          }
+            console.log(
+              "JID:",
+              message.key.remoteJid
+            );
 
-          // ==================================================
-          // /COMANDI
-          // ==================================================
+            console.log(
+              "Da me:",
+              message.key.fromMe
+            );
 
-          if (
-            text.toLowerCase() === "/comandi"
-          ) {
+            const text =
+              getMessageText(
+                message.message
+              ).trim();
 
-            // ----------------------------------------------
-            // /comandi SENZA messaggio citato
-            // ----------------------------------------------
+            console.log(
+              "Testo:",
+              text || "(nessun testo)"
+            );
 
-            if (!isReply) {
+            // ------------------------------------------
+            // IGNORA I MESSAGGI DEL BOT
+            // ------------------------------------------
+
+            if (message.key.fromMe) {
+
+              console.log(
+                "↩️ Messaggio inviato dal bot. Ignorato."
+              );
+
+              continue;
+            }
+
+            // ------------------------------------------
+            // CHAT
+            // ------------------------------------------
+
+            const chat =
+              message.key.remoteJid;
+
+            if (!chat) {
+
+              console.log(
+                "⚠️ Chat non identificata."
+              );
+
+              continue;
+            }
+
+            if (!text) {
+
+              console.log(
+                "⚠️ Messaggio senza testo."
+              );
+
+              continue;
+            }
+
+            console.log(
+              "📩 Messaggio ricevuto:",
+              text
+            );
+
+            // ==================================================
+            // MESSAGGIO CITATO
+            // ==================================================
+
+            const contextInfo =
+              message.message.extendedTextMessage
+                ?.contextInfo ||
+              message.message.imageMessage
+                ?.contextInfo ||
+              message.message.videoMessage
+                ?.contextInfo ||
+              message.message.documentMessage
+                ?.contextInfo;
+
+            const quotedMessage =
+              contextInfo?.quotedMessage || null;
+
+            const quotedText =
+              getMessageText(
+                quotedMessage
+              ).trim();
+
+            if (quotedMessage) {
+
+              console.log(
+                "↩️ MESSAGGIO CITATO:"
+              );
+
+              console.log(
+                quotedText || "(senza testo)"
+              );
+            }
+
+            // ==================================================
+            // /COMANDI
+            // ==================================================
+
+            if (
+              text.toLowerCase() === "/comandi"
+            ) {
+
+              if (!quotedMessage) {
+
+                await sock.sendMessage(chat, {
+                  text:
+                    "🤖 *COMANDI BOT*\n\n" +
+                    "• /comandi\n" +
+                    "• /ping\n" +
+                    "• /info\n\n" +
+                    "Puoi anche rispondere a un messaggio con /comandi."
+                });
+
+              } else {
+
+                await sock.sendMessage(chat, {
+                  text:
+                    "🎯 *MESSAGGIO SELEZIONATO*\n\n" +
+                    (
+                      quotedText
+                        ? `💬 ${quotedText}`
+                        : "💬 Il messaggio citato non contiene testo."
+                    )
+                });
+
+              }
+
+              continue;
+            }
+
+            // ==================================================
+            // /PING
+            // ==================================================
+
+            if (
+              text.toLowerCase() === "/ping"
+            ) {
+
+              await sock.sendMessage(chat, {
+                text: "🏓 Pong!"
+              });
+
+              continue;
+            }
+
+            // ==================================================
+            // /INFO
+            // ==================================================
+
+            if (
+              text.toLowerCase() === "/info"
+            ) {
 
               await sock.sendMessage(chat, {
                 text:
-                  "🤖 *COMANDI BOT*\n\n" +
-                  "• /comandi — mostra i comandi\n" +
-                  "• /ping — controlla se il bot è online\n" +
-                  "• /info — informazioni sul bot\n\n" +
-                  "💡 Puoi anche rispondere a un messaggio con /comandi."
+                  "🤖 *Davide WhatsApp Bot*\n\n" +
+                  "🟢 Stato: Online\n" +
+                  "⚡ Baileys"
               });
 
-              return;
+              continue;
             }
 
-            // ----------------------------------------------
-            // /comandi COME RISPOSTA
-            // ----------------------------------------------
+            // ==================================================
+            // CIAO
+            // ==================================================
+
+            if (
+              text.toLowerCase() === "ciao"
+            ) {
+
+              await sock.sendMessage(chat, {
+                text:
+                  "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
+              });
+
+              continue;
+            }
 
             console.log(
-              "🎯 /comandi collegato al messaggio citato."
+              "ℹ️ Nessun comando associato."
             );
 
             console.log(
-              "🎯 Testo selezionato:",
-              quotedText || "(nessun testo)"
+              "=========================================="
             );
 
-            await sock.sendMessage(chat, {
-              text:
-                "🎯 *MESSAGGIO SELEZIONATO*\n\n" +
-                (
-                  quotedText
-                    ? `💬 ${quotedText}\n\n`
-                    : "💬 Il messaggio citato non contiene testo.\n\n"
-                ) +
-                "✅ Il bot ha riconosciuto il messaggio a cui hai risposto."
-            });
+          } catch (error) {
 
-            return;
+            console.error(
+              "❌ Errore elaborazione messaggio:"
+            );
+
+            console.error(error);
+
           }
-
-          // ==================================================
-          // /PING
-          // ==================================================
-
-          if (
-            text.toLowerCase() === "/ping"
-          ) {
-
-            await sock.sendMessage(chat, {
-              text: "🏓 Pong!"
-            });
-
-            return;
-          }
-
-          // ==================================================
-          // /INFO
-          // ==================================================
-
-          if (
-            text.toLowerCase() === "/info"
-          ) {
-
-            await sock.sendMessage(chat, {
-              text:
-                "🤖 *Davide WhatsApp Bot*\n\n" +
-                "🟢 Stato: Online\n" +
-                "⚡ Powered by Baileys"
-            });
-
-            return;
-          }
-
-          // ==================================================
-          // CIAO
-          // ==================================================
-
-          if (
-            text.toLowerCase() === "ciao"
-          ) {
-
-            await sock.sendMessage(chat, {
-              text:
-                "Ciao! 👋 Sono il bot WhatsApp di Davide 🤖"
-            });
-
-            return;
-          }
-
-        } catch (error) {
-
-          console.error(
-            "❌ Errore gestione messaggio:"
-          );
-
-          console.error(error);
 
         }
 
@@ -356,13 +443,8 @@ async function startWhatsApp() {
     setTimeout(() => {
       startWhatsApp();
     }, 5000);
-
   }
 }
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   startWhatsApp,
