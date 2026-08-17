@@ -17,7 +17,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE
 // ======================================================
 
-const BOT_VERSION = "1.2.2";
+const BOT_VERSION = "1.2.3";
 
 // ======================================================
 // CONFIGURAZIONE
@@ -169,7 +169,12 @@ const aiHistories =
   new Map();
 
 const AI_SYSTEM_PROMPT =
-  "Sei l'Assistente AI personale di Davide su WhatsApp. " +
+  "Sei l'Assistente AI del bot WhatsApp di Davide. " +
+  "Stai parlando con una persona che sta scrivendo al numero di Davide, ma NON devi presumere che la persona con cui stai parlando sia Davide. " +
+  "Non chiamare mai l'interlocutore Davide, a meno che sia la persona stessa a dirti esplicitamente che il suo nome è Davide. " +
+  "Non inventare mai il nome dell'interlocutore. " +
+  "Quando saluti una persona, usa saluti neutri e naturali come 'Ciao! 👋 Come posso aiutarti?' oppure 'Ciao! Come posso esserti utile?'. " +
+  "Non usare automaticamente nomi propri nei saluti o nelle risposte. " +
   "Rispondi in italiano salvo richiesta diversa. " +
   "Sii utile, naturale, chiaro e abbastanza conciso. " +
   "Non fingere di essere Davide e non dire di essere una persona reale. " +
@@ -694,7 +699,7 @@ async function activateDavideMode(
 }
 
 // ======================================================
-// METEO
+// NORMALIZZAZIONE TESTO
 // ======================================================
 
 function normalizeText(
@@ -721,7 +726,7 @@ function normalizeText(
 }
 
 // ======================================================
-// PAROLE METEO
+// RICHIESTA METEO
 // ======================================================
 
 function isWeatherRequest(
@@ -797,7 +802,7 @@ function isWeatherRequest(
 }
 
 // ======================================================
-// ESTRAZIONE CITTÀ SICURA
+// ESTRAZIONE CITTÀ
 // ======================================================
 
 function extractWeatherCity(
@@ -811,10 +816,6 @@ function extractWeatherCity(
     normalizeText(
       text
     );
-
-  // ----------------------------------------------
-  // Rimuoviamo le parti tipiche della richiesta
-  // ----------------------------------------------
 
   let cleaned =
     normalized;
@@ -842,8 +843,6 @@ function extractWeatherCity(
     /\bfare\b/g,
 
     /\bfa\b/g,
-
-    /\bfara\b/g,
 
     /\bdomani\b/g,
 
@@ -890,21 +889,12 @@ function extractWeatherCity(
   cleaned =
     cleaned.trim();
 
-  // ----------------------------------------------
-  // Se rimane una frase vuota o troppo corta,
-  // non abbiamo una città affidabile.
-  // ----------------------------------------------
-
   if (
     !cleaned ||
     cleaned.length < 2
   ) {
     return null;
   }
-
-  // ----------------------------------------------
-  // Togliamo preposizioni rimaste
-  // ----------------------------------------------
 
   cleaned =
     cleaned.replace(
@@ -928,12 +918,6 @@ function extractWeatherCity(
     return null;
   }
 
-  // ----------------------------------------------
-  // Protezione importante:
-  // se rimangono troppe parole, NON proviamo
-  // a cercarle come città.
-  // ----------------------------------------------
-
   const words =
     cleaned.split(
       /\s+/
@@ -944,11 +928,6 @@ function extractWeatherCity(
   ) {
     return null;
   }
-
-  // ----------------------------------------------
-  // Evitiamo che una richiesta generica venga
-  // interpretata come città.
-  // ----------------------------------------------
 
   const genericWords = new Set([
     "tempo",
@@ -979,10 +958,6 @@ function extractWeatherCity(
     return null;
   }
 
-  // ----------------------------------------------
-  // Prima lettera maiuscola per la ricerca.
-  // ----------------------------------------------
-
   const city =
     cleaned
       .split(/\s+/)
@@ -998,7 +973,7 @@ function extractWeatherCity(
 }
 
 // ======================================================
-// GEOCODING CITTÀ
+// GEOCODING
 // ======================================================
 
 async function geocodeCity(
@@ -1038,11 +1013,6 @@ async function geocodeCity(
       return null;
     }
 
-    // ----------------------------------------------
-    // Preferiamo un risultato il cui nome assomiglia
-    // davvero alla città richiesta.
-    // ----------------------------------------------
-
     const requested =
       normalizeText(
         city
@@ -1059,12 +1029,6 @@ async function geocodeCity(
     if (exact) {
       return exact;
     }
-
-    // ----------------------------------------------
-    // Se non c'è corrispondenza esatta, usiamo
-    // il primo risultato SOLO se la ricerca
-    // sembra ragionevole.
-    // ----------------------------------------------
 
     const first =
       data.results[0];
@@ -1089,7 +1053,7 @@ async function geocodeCity(
 }
 
 // ======================================================
-// CODICE METEO
+// CODICI METEO
 // ======================================================
 
 function weatherCodeToText(
@@ -1274,7 +1238,7 @@ function getTomorrowDate() {
 }
 
 // ======================================================
-// DATI METEO
+// METEO
 // ======================================================
 
 async function getTomorrowWeather(
@@ -1468,10 +1432,6 @@ async function handleWeatherRequest(
   chatState
 ) {
 
-  // ----------------------------------------------
-  // STIAMO ASPETTANDO LA CITTÀ
-  // ----------------------------------------------
-
   if (
     chatState?.mode ===
     "weather_waiting_city"
@@ -1528,10 +1488,6 @@ async function handleWeatherRequest(
     return true;
   }
 
-  // ----------------------------------------------
-  // NUOVA RICHIESTA METEO
-  // ----------------------------------------------
-
   if (
     isWeatherRequest(
       text
@@ -1553,10 +1509,6 @@ async function handleWeatherRequest(
       city ||
       "(nessuna)"
     );
-
-    // --------------------------------------------
-    // CITTÀ TROVATA
-    // --------------------------------------------
 
     if (city) {
 
@@ -1583,10 +1535,6 @@ async function handleWeatherRequest(
       return true;
     }
 
-    // --------------------------------------------
-    // CITTÀ NON TROVATA
-    // --------------------------------------------
-
     await saveChatState(
       chat,
       "weather_waiting_city",
@@ -1609,7 +1557,7 @@ async function handleWeatherRequest(
 }
 
 // ======================================================
-// GROQ
+// GROQ AI
 // ======================================================
 
 async function askGroqAI(
@@ -2518,7 +2466,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // METEO IN ATTESA DELLA CITTÀ
+            // METEO IN ATTESA CITTÀ
             // ==================================================
 
             if (
