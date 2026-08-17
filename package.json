@@ -1,6 +1,6 @@
 {
   "name": "davide-whatsapp-bot",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Davide WhatsApp Bot",
   "main": "index.js",
   "scripts": {
@@ -15,7 +15,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.23",
+    "@supabase/supabase-js": "^2.57.4",
+    "@whiskeysockets/baileys": "^6.7.24",
     "express": "^5.2.1",
     "pino": "^9.7.0",
     "qrcode": "^1.5.4"
