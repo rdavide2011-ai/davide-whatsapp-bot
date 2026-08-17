@@ -16,7 +16,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE
 // ======================================================
 
-const BOT_VERSION = "1.1.0";
+const BOT_VERSION = "1.1.1";
 
 // ======================================================
 // SUPABASE
@@ -120,7 +120,7 @@ function getQR() {
 }
 
 // ======================================================
-// CHAT PRIVATE
+// CHAT PRIVATA
 // ======================================================
 
 function isPrivateChat(jid) {
@@ -128,22 +128,27 @@ function isPrivateChat(jid) {
     return false;
   }
 
+  // Gruppi
   if (jid.endsWith("@g.us")) {
     return false;
   }
 
+  // Broadcast
   if (jid.endsWith("@broadcast")) {
     return false;
   }
 
+  // Newsletter / Community
   if (jid.endsWith("@newsletter")) {
     return false;
   }
 
+  // Chat private
   if (jid.endsWith("@s.whatsapp.net")) {
     return true;
   }
 
+  // Chat private LID
   if (jid.endsWith("@lid")) {
     return true;
   }
@@ -258,6 +263,99 @@ async function saveChatState(
 }
 
 // ======================================================
+// ATTIVA PAUSA QUANDO DAVIDE SCRIVE PER PRIMO
+// ======================================================
+
+async function pauseForDavide(chatId) {
+  const pausedUntil =
+    new Date(
+      Date.now() +
+      DAVIDE_PAUSE_MS
+    ).toISOString();
+
+  console.log(
+    "👑 Davide ha scritto per primo."
+  );
+
+  console.log(
+    "🤫 Bot in pausa per 5 ore."
+  );
+
+  const saved =
+    await saveChatState(
+      chatId,
+      "davide",
+      pausedUntil
+    );
+
+  if (!saved) {
+    console.error(
+      "❌ Impossibile salvare la pausa di Davide."
+    );
+
+    return false;
+  }
+
+  console.log(
+    "⏰ Pausa fino a:",
+    pausedUntil
+  );
+
+  return true;
+}
+
+// ======================================================
+// ATTIVA MODALITÀ DAVIDE DA PARTE DELLA PERSONA
+// ======================================================
+
+async function activateDavideMode(
+  sock,
+  chat
+) {
+  console.log(
+    "👤 Attivazione modalità Davide..."
+  );
+
+  const pausedUntil =
+    new Date(
+      Date.now() +
+      DAVIDE_PAUSE_MS
+    ).toISOString();
+
+  const saved =
+    await saveChatState(
+      chat,
+      "davide",
+      pausedUntil
+    );
+
+  if (!saved) {
+
+    await sendTrackedMessage(
+      sock,
+      chat,
+      {
+        text:
+          "❌ Non riesco ad attivare la modalità Davide. Riprova."
+      }
+    );
+
+    return;
+  }
+
+  await sendTrackedMessage(
+    sock,
+    chat,
+    {
+      text:
+        "👤 *Modalità Davide attivata.*\n\n" +
+        "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
+        "Se vuoi riattivarlo prima, scrivi */on*."
+    }
+  );
+}
+
+// ======================================================
 // UPTIME
 // ======================================================
 
@@ -269,7 +367,9 @@ function getUptime() {
     );
 
   const days =
-    Math.floor(seconds / 86400);
+    Math.floor(
+      seconds / 86400
+    );
 
   const hours =
     Math.floor(
@@ -333,7 +433,7 @@ function getUptime() {
 }
 
 // ======================================================
-// TESTO
+// TESTO MESSAGGIO
 // ======================================================
 
 function getMessageText(message) {
@@ -406,7 +506,8 @@ function getButtonId(message) {
 // ======================================================
 
 function getPrivacyModeTs() {
-  const offset = 77980457;
+  const offset =
+    77980457;
 
   return (
     Math.floor(
@@ -464,7 +565,7 @@ function buildMixedNativeFlowBizNode() {
 }
 
 // ======================================================
-// PULSANTE
+// CREA PULSANTE
 // ======================================================
 
 function createQuickReplyButton(
@@ -485,7 +586,7 @@ function createQuickReplyButton(
 }
 
 // ======================================================
-// MESSAGGIO TRACCIATO
+// INVIO MESSAGGIO TRACCIATO
 // ======================================================
 
 async function sendTrackedMessage(
@@ -511,7 +612,7 @@ async function sendTrackedMessage(
 }
 
 // ======================================================
-// MENU PRINCIPALE
+// MENU ASSISTENTE / DAVIDE
 // ======================================================
 
 async function sendModeSelection(
@@ -544,6 +645,7 @@ async function sendModeSelection(
           .InteractiveMessage
           .Header
           .create({
+
             hasMediaAttachment:
               false
           }),
@@ -649,7 +751,7 @@ async function sendModeSelection(
 }
 
 // ======================================================
-// COMANDI
+// PAGINA COMANDI
 // ======================================================
 
 async function sendCommandsWithButtons(
@@ -800,57 +902,6 @@ async function sendCommandsWithButtons(
 
   console.log(
     "✅ Pagina comandi inviata."
-  );
-}
-
-// ======================================================
-// ATTIVA DAVIDE
-// ======================================================
-
-async function activateDavideMode(
-  sock,
-  chat
-) {
-  console.log(
-    "👤 Attivazione modalità Davide..."
-  );
-
-  const pausedUntil =
-    new Date(
-      Date.now() +
-      DAVIDE_PAUSE_MS
-    ).toISOString();
-
-  const saved =
-    await saveChatState(
-      chat,
-      "davide",
-      pausedUntil
-    );
-
-  if (!saved) {
-
-    await sendTrackedMessage(
-      sock,
-      chat,
-      {
-        text:
-          "❌ Non riesco ad attivare la modalità Davide. Riprova."
-      }
-    );
-
-    return;
-  }
-
-  await sendTrackedMessage(
-    sock,
-    chat,
-    {
-      text:
-        "👤 *Modalità Davide attivata.*\n\n" +
-        "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
-        "Se vuoi riattivarlo prima, scrivi */on*."
-    }
   );
 }
 
@@ -1082,7 +1133,7 @@ async function startWhatsApp() {
     );
 
     // ==================================================
-    // MESSAGGI
+    // RICEZIONE MESSAGGI
     // ==================================================
 
     sock.ev.on(
@@ -1126,7 +1177,7 @@ async function startWhatsApp() {
               message.key.remoteJid;
 
             // ==================================================
-            // SOLO PRIVATE
+            // SOLO CHAT PRIVATE
             // ==================================================
 
             if (
@@ -1189,10 +1240,14 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // MESSAGGIO DI DAVIDE
+            // MESSAGGIO INVIATO DA DAVIDE
             // ==================================================
 
             if (fromMe) {
+
+              // ------------------------------------------
+              // SE È UN MESSAGGIO DEL BOT, IGNORALO
+              // ------------------------------------------
 
               if (
                 isBotMessage(
@@ -1201,18 +1256,40 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  "↩️ Messaggio del bot ignorato."
+                  "🤖 Messaggio inviato dal bot. Ignorato."
                 );
 
                 continue;
               }
 
+              // ------------------------------------------
+              // È DAVIDE CHE HA SCRITTO MANUALMENTE
+              // ------------------------------------------
+
               console.log(
-                "👤 Messaggio manuale di Davide."
+                "👑 Davide ha scritto manualmente."
+              );
+
+              /*
+               * IMPORTANTE:
+               *
+               * Quando Davide scrive per primo,
+               * il bot deve stare zitto per 5 ore.
+               *
+               * Non viene inviato nessun messaggio
+               * di conferma.
+               */
+
+              await pauseForDavide(
+                chat
               );
 
               continue;
             }
+
+            // ==================================================
+            // MESSAGGIO RICEVUTO DALLA PERSONA
+            // ==================================================
 
             messagesReceived++;
 
@@ -1252,7 +1329,12 @@ async function startWhatsApp() {
                 null
               );
 
-              // NESSUNA RISPOSTA.
+              /*
+               * NON RISPONDIAMO A /ON.
+               *
+               * Il prossimo messaggio
+               * farà partire il menu.
+               */
 
               console.log(
                 "🤫 Bot riattivato. Aspetto il prossimo messaggio."
@@ -1277,13 +1359,17 @@ async function startWhatsApp() {
                     ).getTime()
                   : 0;
 
+              // ------------------------------------------
+              // PAUSA ATTIVA
+              // ------------------------------------------
+
               if (
                 pausedUntil >
                 Date.now()
               ) {
 
                 console.log(
-                  "🤫 Modalità Davide attiva."
+                  "🤫 Bot in pausa per questa chat."
                 );
 
                 console.log(
@@ -1294,9 +1380,9 @@ async function startWhatsApp() {
                 continue;
               }
 
-              // ==================================================
+              // ------------------------------------------
               // 5 ORE TERMINATE
-              // ==================================================
+              // ------------------------------------------
 
               console.log(
                 "⏰ Le 5 ore sono terminate."
@@ -1339,7 +1425,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // PULSANTE DAVIDE
+            // PULSANTE PARLA CON DAVIDE
             // ==================================================
 
             if (
@@ -1348,7 +1434,7 @@ async function startWhatsApp() {
             ) {
 
               console.log(
-                "👤 Pulsante Parla con Davide."
+                "👤 Pulsante Parla con Davide selezionato."
               );
 
               await activateDavideMode(
@@ -1360,7 +1446,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // PULSANTE AI
+            // PULSANTE ASSISTENTE AI
             // ==================================================
 
             if (
@@ -1369,7 +1455,7 @@ async function startWhatsApp() {
             ) {
 
               console.log(
-                "🤖 Pulsante Assistente AI."
+                "🤖 Pulsante Assistente AI selezionato."
               );
 
               const saved =
@@ -1524,7 +1610,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // STATO NORMALE
+            // CHAT NORMALE / PRIMO MESSAGGIO
             // ==================================================
 
             if (
@@ -1534,12 +1620,12 @@ async function startWhatsApp() {
             ) {
 
               console.log(
-                "🆕 Prima interazione / chat normale."
+                "👤 La persona ha scritto per prima."
               );
 
-              // IMPORTANTE:
-              // NON attiviamo Davide.
-              // Prima mostriamo i pulsanti.
+              console.log(
+                "📋 Invio menu di scelta."
+              );
 
               await saveChatState(
                 chat,
@@ -1569,7 +1655,7 @@ async function startWhatsApp() {
               );
 
               console.log(
-                "👤 Interpreto il nuovo messaggio come richiesta di parlare con Davide."
+                "👤 Il nuovo messaggio viene interpretato come richiesta di parlare con Davide."
               );
 
               await activateDavideMode(
