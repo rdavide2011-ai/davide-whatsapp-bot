@@ -17,7 +17,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE
 // ======================================================
 
-const BOT_VERSION = "1.2.1";
+const BOT_VERSION = "1.2.2";
 
 // ======================================================
 // CONFIGURAZIONE
@@ -176,10 +176,6 @@ const AI_SYSTEM_PROMPT =
   "Puoi aiutare con domande, spiegazioni, traduzioni, riassunti e calcoli. " +
   "Quando una richiesta richiede dati aggiornati che non hai, non inventare informazioni. " +
   "Il bot può utilizzare strumenti esterni quando il codice glieli fornisce.";
-
-// ======================================================
-// MEMORIA AI
-// ======================================================
 
 function getAIHistory(
   chatId
@@ -369,7 +365,7 @@ function getButtonId(
 }
 
 // ======================================================
-// TIMESTAMP WHATSAPP
+// TIMESTAMP
 // ======================================================
 
 function getPrivacyModeTs() {
@@ -432,7 +428,7 @@ function buildMixedNativeFlowBizNode() {
 }
 
 // ======================================================
-// CREA PULSANTE
+// PULSANTE
 // ======================================================
 
 function createQuickReplyButton(
@@ -454,7 +450,7 @@ function createQuickReplyButton(
 }
 
 // ======================================================
-// INVIO MESSAGGIO TRACCIATO
+// INVIO MESSAGGIO
 // ======================================================
 
 async function sendTrackedMessage(
@@ -698,7 +694,34 @@ async function activateDavideMode(
 }
 
 // ======================================================
-// METEO — RICONOSCIMENTO RICHIESTA
+// METEO
+// ======================================================
+
+function normalizeText(
+  text
+) {
+  return (
+    text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      )
+      .replace(
+        /[?!.,;:()[\]{}"'`]/g,
+        " "
+      )
+      .replace(
+        /\s+/g,
+        " "
+      )
+      .trim()
+  );
+}
+
+// ======================================================
+// PAROLE METEO
 // ======================================================
 
 function isWeatherRequest(
@@ -709,13 +732,9 @@ function isWeatherRequest(
   }
 
   const normalized =
-    text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(
-        /[\u0300-\u036f]/g,
-        ""
-      );
+    normalizeText(
+      text
+    );
 
   const weatherWords = [
     "meteo",
@@ -741,35 +760,44 @@ function isWeatherRequest(
     "stanotte"
   ];
 
-  return (
+  const hasWeatherWord =
     weatherWords.some(
       word =>
         normalized.includes(
           word
         )
-    ) &&
+    );
+
+  const hasFutureWord =
+    futureWords.some(
+      word =>
+        normalized.includes(
+          word
+        )
+    );
+
+  const hasWeatherPhrase =
+    normalized.includes(
+      "che tempo"
+    ) ||
+    normalized.includes(
+      "che meteo"
+    ) ||
+    normalized.includes(
+      "previsioni meteo"
+    );
+
+  return (
+    hasWeatherWord &&
     (
-      futureWords.some(
-        word =>
-          normalized.includes(
-            word
-          )
-      ) ||
-      normalized.includes(
-        "che tempo"
-      ) ||
-      normalized.includes(
-        "che meteo"
-      ) ||
-      normalized.includes(
-        "previsioni"
-      )
+      hasFutureWord ||
+      hasWeatherPhrase
     )
   );
 }
 
 // ======================================================
-// METEO — ESTRAZIONE CITTÀ
+// ESTRAZIONE CITTÀ SICURA
 // ======================================================
 
 function extractWeatherCity(
@@ -779,43 +807,207 @@ function extractWeatherCity(
     return null;
   }
 
-  const patterns = [
+  const normalized =
+    normalizeText(
+      text
+    );
 
-    /(?:tempo|meteo|previsioni|pioggia|temperatura)[^a-zA-ZÀ-ÿ]{0,10}(?:domani|oggi|dopodomani)?[^a-zA-ZÀ-ÿ]{0,10}(?:a|ad|in|per)\s+([a-zA-ZÀ-ÿ' -]{2,60})$/i,
+  // ----------------------------------------------
+  // Rimuoviamo le parti tipiche della richiesta
+  // ----------------------------------------------
 
-    /(?:domani|oggi|dopodomani)\s+(?:a|ad|in|per)\s+([a-zA-ZÀ-ÿ' -]{2,60})$/i,
+  let cleaned =
+    normalized;
 
-    /(?:a|ad|in|per)\s+([a-zA-ZÀ-ÿ' -]{2,60})$/i
+  const removePatterns = [
+
+    /\bche\s+tempo\b/g,
+
+    /\bche\s+meteo\b/g,
+
+    /\bmeteo\b/g,
+
+    /\bprevisioni(?:\s+meteo)?\b/g,
+
+    /\btemperatura\b/g,
+
+    /\btemperature\b/g,
+
+    /\btempo\b/g,
+
+    /\bfar[aà]\b/g,
+
+    /\bfara\b/g,
+
+    /\bfare\b/g,
+
+    /\bfa\b/g,
+
+    /\bfara\b/g,
+
+    /\bdomani\b/g,
+
+    /\bdopodomani\b/g,
+
+    /\boggi\b/g,
+
+    /\bstasera\b/g,
+
+    /\bquesta\s+sera\b/g,
+
+    /\bquesta\s+notte\b/g,
+
+    /\bstanotte\b/g,
+
+    /\bper\s+favore\b/g,
+
+    /\bper\s+piacere\b/g,
+
+    /\bmi\s+dici\b/g,
+
+    /\bmi\s+puoi\s+dire\b/g,
+
+    /\bpuoi\s+dire\b/g,
+
+    /\bpuoi\s+dirmi\b/g,
+
+    /\bdimmi\b/g,
+
+    /\s+/g
   ];
 
   for (
-    const pattern of patterns
+    const pattern of
+      removePatterns
   ) {
-    const match =
-      text.match(
-        pattern
+    cleaned =
+      cleaned.replace(
+        pattern,
+        " "
       );
-
-    if (match?.[1]) {
-      return match[1]
-        .trim()
-        .replace(
-          /[?.!,;:]+$/,
-          ""
-        );
-    }
   }
 
-  return null;
+  cleaned =
+    cleaned.trim();
+
+  // ----------------------------------------------
+  // Se rimane una frase vuota o troppo corta,
+  // non abbiamo una città affidabile.
+  // ----------------------------------------------
+
+  if (
+    !cleaned ||
+    cleaned.length < 2
+  ) {
+    return null;
+  }
+
+  // ----------------------------------------------
+  // Togliamo preposizioni rimaste
+  // ----------------------------------------------
+
+  cleaned =
+    cleaned.replace(
+      /^(a|ad|in|per|di|su)\s+/i,
+      ""
+    );
+
+  cleaned =
+    cleaned.replace(
+      /\s+(a|ad|in|per|di|su)$/i,
+      ""
+    );
+
+  cleaned =
+    cleaned.trim();
+
+  if (
+    !cleaned ||
+    cleaned.length < 2
+  ) {
+    return null;
+  }
+
+  // ----------------------------------------------
+  // Protezione importante:
+  // se rimangono troppe parole, NON proviamo
+  // a cercarle come città.
+  // ----------------------------------------------
+
+  const words =
+    cleaned.split(
+      /\s+/
+    );
+
+  if (
+    words.length > 5
+  ) {
+    return null;
+  }
+
+  // ----------------------------------------------
+  // Evitiamo che una richiesta generica venga
+  // interpretata come città.
+  // ----------------------------------------------
+
+  const genericWords = new Set([
+    "tempo",
+    "meteo",
+    "domani",
+    "oggi",
+    "dopodomani",
+    "previsioni",
+    "pioggia",
+    "neve",
+    "temperatura",
+    "temperature",
+    "clima",
+    "sara",
+    "farà",
+    "fare",
+    "fa"
+  ]);
+
+  if (
+    words.every(
+      word =>
+        genericWords.has(
+          word
+        )
+    )
+  ) {
+    return null;
+  }
+
+  // ----------------------------------------------
+  // Prima lettera maiuscola per la ricerca.
+  // ----------------------------------------------
+
+  const city =
+    cleaned
+      .split(/\s+/)
+      .map(
+        word =>
+          word.charAt(0)
+            .toUpperCase() +
+          word.slice(1)
+      )
+      .join(" ");
+
+  return city;
 }
 
 // ======================================================
-// METEO — GEOCODING
+// GEOCODING CITTÀ
 // ======================================================
 
 async function geocodeCity(
   city
 ) {
+  if (!city) {
+    return null;
+  }
+
   const url =
     "https://geocoding-api.open-meteo.com/v1/search" +
     `?name=${encodeURIComponent(city)}` +
@@ -824,8 +1016,11 @@ async function geocodeCity(
     "&format=json";
 
   try {
+
     const response =
-      await fetch(url);
+      await fetch(
+        url
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -843,9 +1038,47 @@ async function geocodeCity(
       return null;
     }
 
-    return data.results[0];
+    // ----------------------------------------------
+    // Preferiamo un risultato il cui nome assomiglia
+    // davvero alla città richiesta.
+    // ----------------------------------------------
+
+    const requested =
+      normalizeText(
+        city
+      );
+
+    const exact =
+      data.results.find(
+        result =>
+          normalizeText(
+            result.name || ""
+          ) === requested
+      );
+
+    if (exact) {
+      return exact;
+    }
+
+    // ----------------------------------------------
+    // Se non c'è corrispondenza esatta, usiamo
+    // il primo risultato SOLO se la ricerca
+    // sembra ragionevole.
+    // ----------------------------------------------
+
+    const first =
+      data.results[0];
+
+    if (
+      !first?.name
+    ) {
+      return null;
+    }
+
+    return first;
 
   } catch (error) {
+
     console.error(
       "❌ Errore geocoding:",
       error.message
@@ -856,7 +1089,7 @@ async function geocodeCity(
 }
 
 // ======================================================
-// METEO — CODICE CONDIZIONE
+// CODICE METEO
 // ======================================================
 
 function weatherCodeToText(
@@ -956,7 +1189,7 @@ function weatherCodeToText(
 }
 
 // ======================================================
-// METEO — EMOJI
+// EMOJI METEO
 // ======================================================
 
 function weatherCodeToEmoji(
@@ -1022,7 +1255,7 @@ function weatherCodeToEmoji(
 }
 
 // ======================================================
-// METEO — DATA DI DOMANI
+// DATA DOMANI
 // ======================================================
 
 function getTomorrowDate() {
@@ -1041,7 +1274,7 @@ function getTomorrowDate() {
 }
 
 // ======================================================
-// METEO — RECUPERA DATI
+// DATI METEO
 // ======================================================
 
 async function getTomorrowWeather(
@@ -1063,16 +1296,23 @@ async function getTomorrowWeather(
 
   const url =
     "https://api.open-meteo.com/v1/forecast" +
-    `?latitude=${encodeURIComponent(location.latitude)}` +
-    `&longitude=${encodeURIComponent(location.longitude)}` +
-    `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+    `?latitude=${encodeURIComponent(
+      location.latitude
+    )}` +
+    `&longitude=${encodeURIComponent(
+      location.longitude
+    )}` +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
     "&timezone=auto" +
     `&start_date=${tomorrow}` +
     `&end_date=${tomorrow}`;
 
   try {
+
     const response =
-      await fetch(url);
+      await fetch(
+        url
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -1096,9 +1336,11 @@ async function getTomorrowWeather(
     }
 
     return {
+
       found: true,
 
       weather: {
+
         date:
           data.daily.time[0],
 
@@ -1123,6 +1365,7 @@ async function getTomorrowWeather(
     };
 
   } catch (error) {
+
     console.error(
       "❌ Errore API meteo:",
       error.message
@@ -1137,7 +1380,7 @@ async function getTomorrowWeather(
 }
 
 // ======================================================
-// METEO — FORMATTA RISPOSTA
+// FORMATTA METEO
 // ======================================================
 
 function formatWeatherResponse(
@@ -1182,21 +1425,27 @@ function formatWeatherResponse(
     Number.isFinite(
       weather.max
     )
-      ? `${Math.round(weather.max)}°C`
+      ? `${Math.round(
+          weather.max
+        )}°C`
       : "N/D";
 
   const min =
     Number.isFinite(
       weather.min
     )
-      ? `${Math.round(weather.min)}°C`
+      ? `${Math.round(
+          weather.min
+        )}°C`
       : "N/D";
 
   const rain =
     Number.isFinite(
       weather.rain
     )
-      ? `${Math.round(weather.rain)}%`
+      ? `${Math.round(
+          weather.rain
+        )}%`
       : "N/D";
 
   return (
@@ -1209,7 +1458,7 @@ function formatWeatherResponse(
 }
 
 // ======================================================
-// METEO — GESTIONE
+// GESTIONE METEO
 // ======================================================
 
 async function handleWeatherRequest(
@@ -1218,9 +1467,9 @@ async function handleWeatherRequest(
   text,
   chatState
 ) {
+
   // ----------------------------------------------
-  // L'utente aveva già richiesto il meteo
-  // e stavamo aspettando la città.
+  // STIAMO ASPETTANDO LA CITTÀ
   // ----------------------------------------------
 
   if (
@@ -1232,6 +1481,7 @@ async function handleWeatherRequest(
       text.trim();
 
     if (!city) {
+
       await sendTrackedMessage(
         sock,
         chat,
@@ -1279,11 +1529,13 @@ async function handleWeatherRequest(
   }
 
   // ----------------------------------------------
-  // Nuova richiesta meteo
+  // NUOVA RICHIESTA METEO
   // ----------------------------------------------
 
   if (
-    isWeatherRequest(text)
+    isWeatherRequest(
+      text
+    )
   ) {
 
     const city =
@@ -1291,16 +1543,22 @@ async function handleWeatherRequest(
         text
       );
 
+    console.log(
+      "🌦️ Richiesta meteo:",
+      text
+    );
+
+    console.log(
+      "🌍 Città rilevata:",
+      city ||
+      "(nessuna)"
+    );
+
     // --------------------------------------------
-    // Città presente
+    // CITTÀ TROVATA
     // --------------------------------------------
 
     if (city) {
-
-      console.log(
-        "🌍 Richiesta meteo con città:",
-        city
-      );
 
       const result =
         await getTomorrowWeather(
@@ -1326,12 +1584,8 @@ async function handleWeatherRequest(
     }
 
     // --------------------------------------------
-    // Città mancante
+    // CITTÀ NON TROVATA
     // --------------------------------------------
-
-    console.log(
-      "🌍 Richiesta meteo senza città."
-    );
 
     await saveChatState(
       chat,
@@ -1355,7 +1609,7 @@ async function handleWeatherRequest(
 }
 
 // ======================================================
-// GROQ AI
+// GROQ
 // ======================================================
 
 async function askGroqAI(
@@ -1421,13 +1675,14 @@ async function askGroqAI(
 }
 
 // ======================================================
-// MENU MODALITÀ
+// MENU AI / DAVIDE
 // ======================================================
 
 async function sendModeSelection(
   sock,
   jid
 ) {
+
   console.log(
     "📤 Invio menu Assistente AI / Davide..."
   );
@@ -1533,8 +1788,10 @@ async function sendModeSelection(
         waMessage.key.id,
 
       additionalNodes: [
+
         {
-          tag: "bot",
+          tag:
+            "bot",
 
           attrs: {
             biz_bot:
@@ -1543,6 +1800,7 @@ async function sendModeSelection(
         },
 
         buildMixedNativeFlowBizNode()
+
       ]
     }
   );
@@ -1566,6 +1824,7 @@ async function sendCommandsWithButtons(
   sock,
   jid
 ) {
+
   const buttons = [
 
     createQuickReplyButton(
@@ -1681,8 +1940,10 @@ async function sendCommandsWithButtons(
         waMessage.key.id,
 
       additionalNodes: [
+
         {
-          tag: "bot",
+          tag:
+            "bot",
 
           attrs: {
             biz_bot:
@@ -1691,6 +1952,7 @@ async function sendCommandsWithButtons(
         },
 
         buildMixedNativeFlowBizNode()
+
       ]
     }
   );
@@ -1707,6 +1969,7 @@ async function sendCommandsWithButtons(
 // ======================================================
 
 function getUptime() {
+
   const seconds =
     Math.floor(
       (Date.now() -
@@ -1958,7 +2221,6 @@ async function startWhatsApp() {
           );
 
           console.log("");
-
         }
 
         if (
@@ -2040,7 +2302,8 @@ async function startWhatsApp() {
         );
 
         for (
-          const message of messages
+          const message of
+            messages
         ) {
 
           try {
@@ -2061,7 +2324,9 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              !isPrivateChat(chat)
+              !isPrivateChat(
+                chat
+              )
             ) {
 
               console.log(
@@ -2370,7 +2635,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // PULSANTE PARLA CON DAVIDE
+            // PULSANTE DAVIDE
             // ==================================================
 
             if (
@@ -2391,7 +2656,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // PULSANTE ASSISTENTE AI
+            // PULSANTE AI
             // ==================================================
 
             if (
