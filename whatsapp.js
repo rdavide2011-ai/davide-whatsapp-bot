@@ -16,7 +16,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE BOT
 // ======================================================
 
-const BOT_VERSION = "1.0.7";
+const BOT_VERSION = "1.0.8";
 
 // ======================================================
 // SUPABASE
@@ -124,7 +124,7 @@ function getQR() {
 }
 
 // ======================================================
-// CONTROLLA CHAT PRIVATA
+// CHAT PRIVATE
 // ======================================================
 
 function isPrivateChat(jid) {
@@ -132,27 +132,22 @@ function isPrivateChat(jid) {
     return false;
   }
 
-  // Gruppi
   if (jid.endsWith("@g.us")) {
     return false;
   }
 
-  // Broadcast
   if (jid.endsWith("@broadcast")) {
     return false;
   }
 
-  // Community / Newsletter
   if (jid.endsWith("@newsletter")) {
     return false;
   }
 
-  // Chat private
   if (jid.endsWith("@s.whatsapp.net")) {
     return true;
   }
 
-  // Chat private LID
   if (jid.endsWith("@lid")) {
     return true;
   }
@@ -161,7 +156,7 @@ function isPrivateChat(jid) {
 }
 
 // ======================================================
-// LEGGI STATO CHAT DA SUPABASE
+// LEGGI STATO CHAT
 // ======================================================
 
 async function getChatState(chatId) {
@@ -206,7 +201,7 @@ async function getChatState(chatId) {
 }
 
 // ======================================================
-// SALVA STATO CHAT SU SUPABASE
+// SALVA STATO CHAT
 // ======================================================
 
 async function saveChatState(
@@ -346,7 +341,7 @@ function getUptime() {
 }
 
 // ======================================================
-// ESTRAI TESTO
+// TESTO MESSAGGIO
 // ======================================================
 
 function getMessageText(message) {
@@ -365,7 +360,7 @@ function getMessageText(message) {
 }
 
 // ======================================================
-// ESTRAI ID PULSANTE
+// ID PULSANTE
 // ======================================================
 
 function getButtonId(message) {
@@ -964,7 +959,6 @@ async function startWhatsApp() {
           "waiting"
         );
 
-        // QR
         if (qr) {
 
           currentQR =
@@ -978,10 +972,6 @@ async function startWhatsApp() {
             "🌐 Apri la pagina del bot per scansionarlo."
           );
         }
-
-        // ==================================================
-        // CONNESSO
-        // ==================================================
 
         if (
           connection ===
@@ -1018,10 +1008,6 @@ async function startWhatsApp() {
           starting =
             false;
         }
-
-        // ==================================================
-        // DISCONNESSO
-        // ==================================================
 
         if (
           connection ===
@@ -1233,7 +1219,7 @@ async function startWhatsApp() {
             messagesReceived++;
 
             // ==================================================
-            // LEGGI STATO CHAT
+            // STATO CHAT
             // ==================================================
 
             const chatState =
@@ -1259,7 +1245,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // COMANDO /ON
+            // /ON
             // ==================================================
 
             if (
@@ -1279,9 +1265,13 @@ async function startWhatsApp() {
                 null
               );
 
-              await sendModeSelection(
-                sock,
-                chat
+              // IMPORTANTISSIMO:
+              // NON rispondiamo a /on.
+              // Il prossimo messaggio farà
+              // partire nuovamente il bot.
+
+              console.log(
+                "🤫 Bot riattivato. Nessuna risposta a /on."
               );
 
               continue;
@@ -1363,7 +1353,8 @@ async function startWhatsApp() {
                 "🤖 Chat in modalità Assistente AI."
               );
 
-              // AI da collegare nel prossimo passaggio.
+              // L'AI verrà collegata
+              // nel prossimo passaggio.
 
               continue;
             }
@@ -1631,7 +1622,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // QUALSIASI ALTRO MESSAGGIO
+            // QUALSIASI MESSAGGIO
             // ==================================================
 
             console.log(
