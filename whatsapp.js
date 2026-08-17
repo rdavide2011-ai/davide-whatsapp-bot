@@ -17,7 +17,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE
 // ======================================================
 
-const BOT_VERSION = "1.2.4";
+const BOT_VERSION = "1.2.5";
 
 // ======================================================
 // CONFIGURAZIONE
@@ -31,6 +31,11 @@ const GROQ_MODEL =
 
 const AI_MAX_HISTORY =
   12;
+
+// Mostra il pulsante "Parla con Davide"
+// ogni 6 risposte dell'AI
+const DAVIDE_BUTTON_EVERY =
+  6;
 
 // ======================================================
 // SUPABASE
@@ -105,6 +110,51 @@ let botStartTime =
 let messagesReceived = 0;
 let messagesSent = 0;
 let commandsExecuted = 0;
+
+// ======================================================
+// CONTATORE RISPOSTE AI
+// ======================================================
+
+const aiResponseCounters =
+  new Map();
+
+function getAIResponseCount(
+  chatId
+) {
+  return (
+    aiResponseCounters.get(
+      chatId
+    ) || 0
+  );
+}
+
+function incrementAIResponseCount(
+  chatId
+) {
+  const current =
+    getAIResponseCount(
+      chatId
+    );
+
+  const next =
+    current + 1;
+
+  aiResponseCounters.set(
+    chatId,
+    next
+  );
+
+  return next;
+}
+
+function resetAIResponseCount(
+  chatId
+) {
+  aiResponseCounters.set(
+    chatId,
+    0
+  );
+}
 
 // ======================================================
 // MESSAGGI INVIATI DAL BOT
@@ -211,6 +261,10 @@ function clearAIHistory(
   chatId
 ) {
   aiHistories.delete(
+    chatId
+  );
+
+  resetAIResponseCount(
     chatId
   );
 }
@@ -455,7 +509,7 @@ function createQuickReplyButton(
 }
 
 // ======================================================
-// INVIO MESSAGGIO
+// INVIO MESSAGGIO NORMALE
 // ======================================================
 
 async function sendTrackedMessage(
@@ -480,6 +534,159 @@ async function sendTrackedMessage(
   messagesSent++;
 
   return sent;
+}
+
+// ======================================================
+// INVIO RISPOSTA AI CON PULSANTE DAVIDE
+// ======================================================
+
+async function sendAIMessage(
+  sock,
+  jid,
+  text,
+  showDavideButton
+) {
+  // ----------------------------------------------
+  // Risposta normale
+  // ----------------------------------------------
+
+  if (!showDavideButton) {
+
+    await sendTrackedMessage(
+      sock,
+      jid,
+      {
+        text
+      }
+    );
+
+    return;
+  }
+
+  // ----------------------------------------------
+  // Risposta AI + pulsante
+  // ----------------------------------------------
+
+  console.log(
+    "👤 Aggiungo pulsante 'Parla con Davide'."
+  );
+
+  const button =
+    createQuickReplyButton(
+      "👤 Parla con Davide",
+      "mode_davide"
+    );
+
+  const interactiveMessage =
+    proto.Message
+      .InteractiveMessage
+      .create({
+
+        header:
+          proto.Message
+            .InteractiveMessage
+            .Header
+            .create({
+
+              hasMediaAttachment:
+                false
+            }),
+
+        body:
+          proto.Message
+            .InteractiveMessage
+            .Body
+            .create({
+
+              text:
+                text +
+                "\n\n" +
+                "👤 Se preferisci parlare direttamente con Davide:"
+            }),
+
+        footer:
+          proto.Message
+            .InteractiveMessage
+            .Footer
+            .create({
+
+              text:
+                "Davide WhatsApp Bot"
+            }),
+
+        nativeFlowMessage:
+          proto.Message
+            .InteractiveMessage
+            .NativeFlowMessage
+            .create({
+
+              buttons: [
+
+                proto.Message
+                  .InteractiveMessage
+                  .NativeFlowMessage
+                  .NativeFlowButton
+                  .create({
+
+                    name:
+                      button.name,
+
+                    buttonParamsJson:
+                      button.buttonParamsJson
+                  })
+
+              ],
+
+              messageParamsJson:
+                "{}",
+
+              messageVersion:
+                1
+            })
+      });
+
+  const waMessage =
+    generateWAMessageFromContent(
+      jid,
+      {
+        interactiveMessage
+      },
+      {
+        userJid:
+          sock.user?.id
+      }
+    );
+
+  await sock.relayMessage(
+    jid,
+    waMessage.message,
+    {
+      messageId:
+        waMessage.key.id,
+
+      additionalNodes: [
+
+        {
+          tag:
+            "bot",
+
+          attrs: {
+            biz_bot:
+              "1"
+          }
+        },
+
+        buildMixedNativeFlowBizNode()
+
+      ]
+    }
+  );
+
+  rememberBotMessage(
+    waMessage.key.id
+  );
+
+  messagesSent++;
 }
 
 // ======================================================
@@ -726,6 +933,86 @@ function normalizeText(
 }
 
 // ======================================================
+// RICONOSCIMENTO RICHIESTA DAVIDE
+// ======================================================
+
+function isDavideRequest(
+  text
+) {
+  if (!text) {
+    return false;
+  }
+
+  const normalized =
+    normalizeText(
+      text
+    );
+
+  const patterns = [
+
+    /\bvoglio parlare con davide\b/,
+
+    /\bvorrei parlare con davide\b/,
+
+    /\bposso parlare con davide\b/,
+
+    /\bposso parlare direttamente con davide\b/,
+
+    /\bmi fai parlare con davide\b/,
+
+    /\bmi puoi far parlare con davide\b/,
+
+    /\bmi passi davide\b/,
+
+    /\bpassami davide\b/,
+
+    /\bpassami direttamente davide\b/,
+
+    /\bparlare direttamente con davide\b/,
+
+    /\bvorrei parlare direttamente con davide\b/,
+
+    /\bvoglio parlare direttamente con davide\b/,
+
+    /\bdevo parlare con davide\b/,
+
+    /\bho bisogno di parlare con davide\b/,
+
+    /\bmi serve davide\b/,
+
+    /\bserve davide\b/,
+
+    /\bposso parlare con lui\b/,
+
+    /\bvorrei parlare con lui\b/,
+
+    /\bvoglio parlare con lui\b/,
+
+    /\bparlare con lui\b/,
+
+    /\bnon voglio parlare con il bot\b/,
+
+    /\bnon voglio parlare con l ai\b/,
+
+    /\bnon voglio parlare con la ai\b/,
+
+    /\bbasta bot\b/,
+
+    /\bferma il bot\b/,
+
+    /\bstop bot\b/
+
+  ];
+
+  return patterns.some(
+    pattern =>
+      pattern.test(
+        normalized
+      )
+  );
+}
+
+// ======================================================
 // RICONOSCIMENTO ORARIO
 // ======================================================
 
@@ -747,8 +1034,6 @@ function isTimeRequest(
 
     /\bche ora e\b/,
 
-    /\bche ora è\b/,
-
     /\bsai che ore sono\b/,
 
     /\bsai dirmi che ore sono\b/,
@@ -757,15 +1042,9 @@ function isTimeRequest(
 
     /\bmi dici l ora\b/,
 
-    /\bmi dici l'ora\b/,
-
     /\bquanto e l ora\b/,
 
-    /\bquanto è l ora\b/,
-
-    /\bquanto e l'ora\b/,
-
-    /\bquanto è l'ora\b/,
+    /\bquanto e l ora\b/,
 
     /\borario attuale\b/,
 
@@ -775,9 +1054,7 @@ function isTimeRequest(
 
     /\bche ore sono adesso\b/,
 
-    /\bche ora e adesso\b/,
-
-    /\bche ora è adesso\b/
+    /\bche ora e adesso\b/
 
   ];
 
@@ -818,7 +1095,7 @@ function getItalianTime() {
 }
 
 // ======================================================
-// RISPOSTA ORARIO
+// GESTIONE ORARIO
 // ======================================================
 
 async function handleTimeRequest(
@@ -1076,7 +1353,6 @@ function extractWeatherCity(
     "temperature",
     "clima",
     "sara",
-    "farà",
     "fare",
     "fa"
   ]);
@@ -2150,6 +2426,10 @@ async function startWhatsApp() {
       `📱 Avvio WhatsApp Bot v${BOT_VERSION}...`
     );
 
+    // ==================================================
+    // TEST SUPABASE
+    // ==================================================
+
     if (supabase) {
 
       try {
@@ -2191,6 +2471,10 @@ async function startWhatsApp() {
         );
       }
     }
+
+    // ==================================================
+    // AUTENTICAZIONE
+    // ==================================================
 
     const {
       state,
@@ -2393,6 +2677,10 @@ async function startWhatsApp() {
             const chat =
               message.key.remoteJid;
 
+            // ==================================================
+            // SOLO CHAT PRIVATE
+            // ==================================================
+
             if (
               !isPrivateChat(
                 chat
@@ -2467,7 +2755,7 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  "🤖 Mensagem inviato dal bot. Ignorato."
+                  "🤖 Messaggio inviato dal bot. Ignorato."
                 );
 
                 continue;
@@ -2624,6 +2912,28 @@ async function startWhatsApp() {
               }
 
               // ----------------------------------------------
+              // RICHIESTA DI PARLARE CON DAVIDE
+              // ----------------------------------------------
+
+              if (
+                isDavideRequest(
+                  text
+                )
+              ) {
+
+                console.log(
+                  "👤 Richiesta naturale di parlare con Davide."
+                );
+
+                await activateDavideMode(
+                  sock,
+                  chat
+                );
+
+                continue;
+              }
+
+              // ----------------------------------------------
               // ORARIO
               // ----------------------------------------------
 
@@ -2688,13 +2998,38 @@ async function startWhatsApp() {
                     text
                   );
 
-                await sendTrackedMessage(
+                // ------------------------------------------
+                // CONTATORE RISPOSTE AI
+                // ------------------------------------------
+
+                const responseNumber =
+                  incrementAIResponseCount(
+                    chat
+                  );
+
+                const showDavideButton =
+                  responseNumber %
+                    DAVIDE_BUTTON_EVERY ===
+                  0;
+
+                console.log(
+                  `🤖 Risposta AI #${responseNumber}`
+                );
+
+                if (
+                  showDavideButton
+                ) {
+
+                  console.log(
+                    "👤 Questa risposta mostrerà il pulsante Davide."
+                  );
+                }
+
+                await sendAIMessage(
                   sock,
                   chat,
-                  {
-                    text:
-                      answer
-                  }
+                  answer,
+                  showDavideButton
                 );
 
                 console.log(
