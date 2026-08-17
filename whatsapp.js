@@ -17,7 +17,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE
 // ======================================================
 
-const BOT_VERSION = "1.2.3";
+const BOT_VERSION = "1.2.4";
 
 // ======================================================
 // CONFIGURAZIONE
@@ -723,6 +723,140 @@ function normalizeText(
       )
       .trim()
   );
+}
+
+// ======================================================
+// RICONOSCIMENTO ORARIO
+// ======================================================
+
+function isTimeRequest(
+  text
+) {
+  if (!text) {
+    return false;
+  }
+
+  const normalized =
+    normalizeText(
+      text
+    );
+
+  const patterns = [
+
+    /\bche ore sono\b/,
+
+    /\bche ora e\b/,
+
+    /\bche ora è\b/,
+
+    /\bsai che ore sono\b/,
+
+    /\bsai dirmi che ore sono\b/,
+
+    /\bmi dici che ore sono\b/,
+
+    /\bmi dici l ora\b/,
+
+    /\bmi dici l'ora\b/,
+
+    /\bquanto e l ora\b/,
+
+    /\bquanto è l ora\b/,
+
+    /\bquanto e l'ora\b/,
+
+    /\bquanto è l'ora\b/,
+
+    /\borario attuale\b/,
+
+    /\bora attuale\b/,
+
+    /\bora corrente\b/,
+
+    /\bche ore sono adesso\b/,
+
+    /\bche ora e adesso\b/,
+
+    /\bche ora è adesso\b/
+
+  ];
+
+  return patterns.some(
+    pattern =>
+      pattern.test(
+        normalized
+      )
+  );
+}
+
+// ======================================================
+// ORA ITALIANA
+// ======================================================
+
+function getItalianTime() {
+  return new Intl.DateTimeFormat(
+    "it-IT",
+    {
+      timeZone:
+        "Europe/Rome",
+
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      second:
+        "2-digit",
+
+      hour12:
+        false
+    }
+  ).format(
+    new Date()
+  );
+}
+
+// ======================================================
+// RISPOSTA ORARIO
+// ======================================================
+
+async function handleTimeRequest(
+  sock,
+  chat,
+  text
+) {
+  if (
+    !isTimeRequest(
+      text
+    )
+  ) {
+    return false;
+  }
+
+  const time =
+    getItalianTime();
+
+  console.log(
+    "🕐 Richiesta orario:",
+    text
+  );
+
+  console.log(
+    "🕐 Ora italiana:",
+    time
+  );
+
+  await sendTrackedMessage(
+    sock,
+    chat,
+    {
+      text:
+        `🕐 Sono le *${time}*.`
+    }
+  );
+
+  return true;
 }
 
 // ======================================================
@@ -2016,10 +2150,6 @@ async function startWhatsApp() {
       `📱 Avvio WhatsApp Bot v${BOT_VERSION}...`
     );
 
-    // ==================================================
-    // TEST SUPABASE
-    // ==================================================
-
     if (supabase) {
 
       try {
@@ -2061,10 +2191,6 @@ async function startWhatsApp() {
         );
       }
     }
-
-    // ==================================================
-    // AUTENTICAZIONE
-    // ==================================================
 
     const {
       state,
@@ -2267,10 +2393,6 @@ async function startWhatsApp() {
             const chat =
               message.key.remoteJid;
 
-            // ==================================================
-            // SOLO CHAT PRIVATE
-            // ==================================================
-
             if (
               !isPrivateChat(
                 chat
@@ -2345,7 +2467,7 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  "🤖 Messaggio inviato dal bot. Ignorato."
+                  "🤖 Mensagem inviato dal bot. Ignorato."
                 );
 
                 continue;
@@ -2502,6 +2624,23 @@ async function startWhatsApp() {
               }
 
               // ----------------------------------------------
+              // ORARIO
+              // ----------------------------------------------
+
+              const timeHandled =
+                await handleTimeRequest(
+                  sock,
+                  chat,
+                  text
+                );
+
+              if (
+                timeHandled
+              ) {
+                continue;
+              }
+
+              // ----------------------------------------------
               // METEO
               // ----------------------------------------------
 
@@ -2639,7 +2778,7 @@ async function startWhatsApp() {
                     "🤖 *Assistente AI attivato.*\n\n" +
                     "Puoi chiedermi qualsiasi cosa.\n\n" +
                     "🌦️ Ad esempio: *Che tempo farà domani?*\n" +
-                    "🕐 Puoi chiedermi l'ora.\n" +
+                    "🕐 Puoi chiedermi *che ore sono*.\n" +
                     "🌐 Puoi chiedermi una traduzione.\n" +
                     "🧮 Puoi chiedermi un calcolo.\n" +
                     "📝 Puoi chiedermi di riassumere un testo.\n\n" +
