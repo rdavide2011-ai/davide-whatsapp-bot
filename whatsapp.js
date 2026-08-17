@@ -5,35 +5,26 @@ const {
   Browsers,
   proto,
   generateWAMessageFromContent
-} = require("@whiskeysockets/baileys");
+} = require('@whiskeysockets/baileys');
 
-const P = require("pino");
-const { createClient } = require("@supabase/supabase-js");
+const P = require('pino');
+const { createClient } = require('@supabase/supabase-js');
+const Groq = require('groq-sdk');
 
-const AUTH_FOLDER = "./auth_info";
+const AUTH_FOLDER = './auth_info';
+const BOT_VERSION = '1.2.0';
+const DAVIDE_PAUSE_MS = 5 * 60 * 60 * 1000;
+const GROQ_MODEL = 'openai/gpt-oss-20b';
+const AI_MAX_HISTORY = 12;
 
-// ======================================================
-// VERSIONE
-// ======================================================
-
-const BOT_VERSION = "1.1.1";
-
-// ======================================================
-// SUPABASE
-// ======================================================
-
-const SUPABASE_URL =
-  process.env.SUPABASE_URL;
-
-const SUPABASE_SECRET_KEY =
-  process.env.SUPABASE_SECRET_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 let supabase = null;
+let groq = null;
 
-if (
-  SUPABASE_URL &&
-  SUPABASE_SECRET_KEY
-) {
+if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
   supabase = createClient(
     SUPABASE_URL,
     SUPABASE_SECRET_KEY,
@@ -46,17 +37,27 @@ if (
   );
 
   console.log(
-    "✅ Supabase configurato correttamente."
+    '✅ Supabase configurato correttamente.'
   );
 } else {
   console.error(
-    "❌ ERRORE: variabili Supabase mancanti."
+    '❌ ERRORE: variabili Supabase mancanti.'
   );
 }
 
-// ======================================================
-// STATO BOT
-// ======================================================
+if (GROQ_API_KEY) {
+  groq = new Groq({
+    apiKey: GROQ_API_KEY
+  });
+
+  console.log(
+    '✅ Groq configurato correttamente.'
+  );
+} else {
+  console.error(
+    '❌ ERRORE: variabile GROQ_API_KEY mancante.'
+  );
+}
 
 let currentQR = null;
 let starting = false;
@@ -68,378 +69,70 @@ let messagesReceived = 0;
 let messagesSent = 0;
 let commandsExecuted = 0;
 
-// ======================================================
-// PAUSA DAVIDE
-// ======================================================
-
-const DAVIDE_PAUSE_MS =
-  5 * 60 * 60 * 1000;
-
-// ======================================================
-// MESSAGGI INVIATI DAL BOT
-// ======================================================
-
 const botSentMessageIds = new Set();
+const aiConversations = new Map();
 
-function rememberBotMessage(messageId) {
-  if (!messageId) {
-    return;
-  }
+const AI_SYSTEM_PROMPT =
+  "Sei l'Assistente AI di Davide su WhatsApp. " +
+  "Rispondi in italiano salvo diversa richiesta dell'utente. " +
+  "Sei utile, naturale, chiaro e abbastanza conciso. " +
+  "Non fingere di essere Davide e non dire di essere una persona reale. " +
+  "Puoi aiutare con domande, traduzioni, riassunti, spiegazioni e calcoli. " +
+  "Quando una richiesta richiede informazioni in tempo reale che non puoi verificare, " +
+  "dichiara chiaramente il limite invece di inventare dati.";
 
-  botSentMessageIds.add(messageId);
+function rememberBotMessage(id) {
+  if (!id) return;
+
+  botSentMessageIds.add(id);
 
   if (botSentMessageIds.size > 500) {
-    const firstId =
-      botSentMessageIds.values().next().value;
-
-    botSentMessageIds.delete(firstId);
+    botSentMessageIds.delete(
+      botSentMessageIds.values().next().value
+    );
   }
 }
 
-function isBotMessage(messageId) {
-  if (!messageId) {
-    return false;
-  }
+function isBotMessage(id) {
+  if (!id) return false;
 
   const result =
-    botSentMessageIds.has(messageId);
+    botSentMessageIds.has(id);
 
   if (result) {
-    botSentMessageIds.delete(messageId);
+    botSentMessageIds.delete(id);
   }
 
   return result;
 }
 
-// ======================================================
-// QR
-// ======================================================
-
 function getQR() {
   return currentQR;
 }
 
-// ======================================================
-// CHAT PRIVATA
-// ======================================================
-
 function isPrivateChat(jid) {
-  if (!jid) {
+  if (!jid) return false;
+
+  if (jid.endsWith('@g.us')) {
     return false;
   }
 
-  // Gruppi
-  if (jid.endsWith("@g.us")) {
+  if (jid.endsWith('@broadcast')) {
     return false;
   }
 
-  // Broadcast
-  if (jid.endsWith("@broadcast")) {
+  if (jid.endsWith('@newsletter')) {
     return false;
   }
 
-  // Newsletter / Community
-  if (jid.endsWith("@newsletter")) {
-    return false;
-  }
-
-  // Chat private
-  if (jid.endsWith("@s.whatsapp.net")) {
-    return true;
-  }
-
-  // Chat private LID
-  if (jid.endsWith("@lid")) {
-    return true;
-  }
-
-  return false;
-}
-
-// ======================================================
-// LEGGI STATO CHAT
-// ======================================================
-
-async function getChatState(chatId) {
-  if (!supabase) {
-    return null;
-  }
-
-  try {
-    const {
-      data,
-      error
-    } = await supabase
-      .from("chat_states")
-      .select(
-        "chat_id, mode, paused_until, updated_at"
-      )
-      .eq(
-        "chat_id",
-        chatId
-      )
-      .maybeSingle();
-
-    if (error) {
-      console.error(
-        "❌ Errore lettura stato chat:",
-        error.message
-      );
-
-      return null;
-    }
-
-    return data || null;
-
-  } catch (error) {
-    console.error(
-      "❌ Errore Supabase getChatState:",
-      error.message
-    );
-
-    return null;
-  }
-}
-
-// ======================================================
-// SALVA STATO CHAT
-// ======================================================
-
-async function saveChatState(
-  chatId,
-  mode = "normal",
-  pausedUntil = null
-) {
-  if (!supabase) {
-    return false;
-  }
-
-  try {
-    const {
-      error
-    } = await supabase
-      .from("chat_states")
-      .upsert(
-        {
-          chat_id: chatId,
-          mode: mode,
-          paused_until: pausedUntil,
-          updated_at:
-            new Date().toISOString()
-        },
-        {
-          onConflict: "chat_id"
-        }
-      );
-
-    if (error) {
-      console.error(
-        "❌ Errore salvataggio stato:",
-        error.message
-      );
-
-      return false;
-    }
-
-    console.log(
-      "💾 Stato chat:",
-      chatId,
-      "→",
-      mode,
-      "| pausa:",
-      pausedUntil || "nessuna"
-    );
-
-    return true;
-
-  } catch (error) {
-    console.error(
-      "❌ Errore Supabase saveChatState:",
-      error.message
-    );
-
-    return false;
-  }
-}
-
-// ======================================================
-// ATTIVA PAUSA QUANDO DAVIDE SCRIVE PER PRIMO
-// ======================================================
-
-async function pauseForDavide(chatId) {
-  const pausedUntil =
-    new Date(
-      Date.now() +
-      DAVIDE_PAUSE_MS
-    ).toISOString();
-
-  console.log(
-    "👑 Davide ha scritto per primo."
-  );
-
-  console.log(
-    "🤫 Bot in pausa per 5 ore."
-  );
-
-  const saved =
-    await saveChatState(
-      chatId,
-      "davide",
-      pausedUntil
-    );
-
-  if (!saved) {
-    console.error(
-      "❌ Impossibile salvare la pausa di Davide."
-    );
-
-    return false;
-  }
-
-  console.log(
-    "⏰ Pausa fino a:",
-    pausedUntil
-  );
-
-  return true;
-}
-
-// ======================================================
-// ATTIVA MODALITÀ DAVIDE DA PARTE DELLA PERSONA
-// ======================================================
-
-async function activateDavideMode(
-  sock,
-  chat
-) {
-  console.log(
-    "👤 Attivazione modalità Davide..."
-  );
-
-  const pausedUntil =
-    new Date(
-      Date.now() +
-      DAVIDE_PAUSE_MS
-    ).toISOString();
-
-  const saved =
-    await saveChatState(
-      chat,
-      "davide",
-      pausedUntil
-    );
-
-  if (!saved) {
-
-    await sendTrackedMessage(
-      sock,
-      chat,
-      {
-        text:
-          "❌ Non riesco ad attivare la modalità Davide. Riprova."
-      }
-    );
-
-    return;
-  }
-
-  await sendTrackedMessage(
-    sock,
-    chat,
-    {
-      text:
-        "👤 *Modalità Davide attivata.*\n\n" +
-        "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
-        "Se vuoi riattivarlo prima, scrivi */on*."
-    }
+  return (
+    jid.endsWith('@s.whatsapp.net') ||
+    jid.endsWith('@lid')
   );
 }
-
-// ======================================================
-// UPTIME
-// ======================================================
-
-function getUptime() {
-  const seconds =
-    Math.floor(
-      (Date.now() - botStartTime) /
-      1000
-    );
-
-  const days =
-    Math.floor(
-      seconds / 86400
-    );
-
-  const hours =
-    Math.floor(
-      (seconds % 86400) / 3600
-    );
-
-  const minutes =
-    Math.floor(
-      (seconds % 3600) / 60
-    );
-
-  const secs =
-    seconds % 60;
-
-  const parts = [];
-
-  if (days > 0) {
-    parts.push(
-      `${days} ${
-        days === 1
-          ? "giorno"
-          : "giorni"
-      }`
-    );
-  }
-
-  if (hours > 0) {
-    parts.push(
-      `${hours} ${
-        hours === 1
-          ? "ora"
-          : "ore"
-      }`
-    );
-  }
-
-  if (minutes > 0) {
-    parts.push(
-      `${minutes} ${
-        minutes === 1
-          ? "minuto"
-          : "minuti"
-      }`
-    );
-  }
-
-  if (
-    secs > 0 ||
-    parts.length === 0
-  ) {
-    parts.push(
-      `${secs} ${
-        secs === 1
-          ? "secondo"
-          : "secondi"
-      }`
-    );
-  }
-
-  return parts.join(", ");
-}
-
-// ======================================================
-// TESTO MESSAGGIO
-// ======================================================
 
 function getMessageText(message) {
-  if (!message) {
-    return "";
-  }
+  if (!message) return '';
 
   return (
     message.conversation ||
@@ -447,18 +140,12 @@ function getMessageText(message) {
     message.imageMessage?.caption ||
     message.videoMessage?.caption ||
     message.documentMessage?.caption ||
-    ""
+    ''
   );
 }
 
-// ======================================================
-// ID PULSANTE
-// ======================================================
-
 function getButtonId(message) {
-  if (!message) {
-    return "";
-  }
+  if (!message) return '';
 
   const response =
     message.interactiveResponseMessage;
@@ -479,13 +166,13 @@ function getButtonId(message) {
       return (
         params.id ||
         params.selected_id ||
-        ""
+        ''
       );
 
-    } catch (error) {
+    } catch (e) {
       console.log(
-        "⚠️ Errore lettura pulsante:",
-        error.message
+        '⚠️ Errore lettura pulsante:',
+        e.message
       );
     }
   }
@@ -497,97 +184,77 @@ function getButtonId(message) {
     message
       .templateButtonReplyMessage
       ?.selectedId ||
-    ""
+    ''
   );
 }
 
-// ======================================================
-// TIMESTAMP
-// ======================================================
-
 function getPrivacyModeTs() {
-  const offset =
-    77980457;
-
   return (
     Math.floor(
       Date.now() / 1000
-    ) - offset
+    ) - 77980457
   ).toString();
 }
 
-// ======================================================
-// BIZ NODE
-// ======================================================
-
 function buildMixedNativeFlowBizNode() {
   return {
-    tag: "biz",
+    tag: 'biz',
 
     attrs: {
-      actual_actors: "2",
-      host_storage: "2",
+      actual_actors: '2',
+      host_storage: '2',
       privacy_mode_ts:
         getPrivacyModeTs()
     },
 
     content: [
       {
-        tag: "interactive",
+        tag: 'interactive',
 
         attrs: {
-          type: "native_flow",
-          v: "1"
+          type: 'native_flow',
+          v: '1'
         },
 
         content: [
           {
-            tag: "native_flow",
+            tag: 'native_flow',
 
             attrs: {
-              v: "9",
-              name: "mixed"
+              v: '9',
+              name: 'mixed'
             }
           }
         ]
       },
 
       {
-        tag: "quality_control",
+        tag: 'quality_control',
 
         attrs: {
-          source_type:
-            "third_party"
+          source_type: 'third_party'
         }
       }
     ]
   };
 }
 
-// ======================================================
-// CREA PULSANTE
-// ======================================================
-
 function createQuickReplyButton(
   displayText,
   id
 ) {
   return {
-    name: "quick_reply",
+    name: 'quick_reply',
 
     buttonParamsJson:
       JSON.stringify({
         display_text:
           displayText,
-        id:
-          id
+
+        id
       })
   };
 }
-
-// ======================================================
-// INVIO MESSAGGIO TRACCIATO
-// ======================================================
 
 async function sendTrackedMessage(
   sock,
@@ -611,119 +278,459 @@ async function sendTrackedMessage(
   return sent;
 }
 
-// ======================================================
-// MENU ASSISTENTE / DAVIDE
-// ======================================================
+async function getChatState(chatId) {
+  if (!supabase) {
+    return null;
+  }
+
+  try {
+    const {
+      data,
+      error
+    } = await supabase
+      .from('chat_states')
+      .select(
+        'chat_id, mode, paused_until, updated_at'
+      )
+      .eq(
+        'chat_id',
+        chatId
+      )
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        '❌ Errore lettura stato chat:',
+        error.message
+      );
+
+      return null;
+    }
+
+    return data || null;
+
+  } catch (e) {
+    console.error(
+      '❌ Errore Supabase getChatState:',
+      e.message
+    );
+
+    return null;
+  }
+}
+
+async function saveChatState(
+  chatId,
+  mode = 'normal',
+  pausedUntil = null
+) {
+  if (!supabase) {
+    return false;
+  }
+
+  try {
+    const {
+      error
+    } = await supabase
+      .from('chat_states')
+      .upsert(
+        {
+          chat_id:
+            chatId,
+
+          mode,
+
+          paused_until:
+            pausedUntil,
+
+          updated_at:
+            new Date().toISOString()
+        },
+
+        {
+          onConflict:
+            'chat_id'
+        }
+      );
+
+    if (error) {
+      console.error(
+        '❌ Errore salvataggio stato:',
+        error.message
+      );
+
+      return false;
+    }
+
+    console.log(
+      '💾 Stato chat:',
+      chatId,
+      '→',
+      mode,
+      '| pausa:',
+      pausedUntil ||
+      'nessuna'
+    );
+
+    return true;
+
+  } catch (e) {
+    console.error(
+      '❌ Errore Supabase saveChatState:',
+      e.message
+    );
+
+    return false;
+  }
+}
+
+function getAIHistory(chatId) {
+  if (!aiConversations.has(chatId)) {
+    aiConversations.set(
+      chatId,
+      [
+        {
+          role: 'system',
+          content:
+            AI_SYSTEM_PROMPT
+        }
+      ]
+    );
+  }
+
+  return aiConversations.get(
+    chatId
+  );
+}
+
+function clearAIHistory(chatId) {
+  aiConversations.delete(
+    chatId
+  );
+}
+
+async function askGroqAI(
+  chatId,
+  userText
+) {
+  if (!groq) {
+    throw new Error(
+      'GROQ_API_KEY non configurata su Railway.'
+    );
+  }
+
+  const history =
+    getAIHistory(chatId);
+
+  history.push({
+    role: 'user',
+    content: userText
+  });
+
+  const response =
+    await groq.chat.completions.create({
+      model:
+        GROQ_MODEL,
+
+      messages:
+        history,
+
+      temperature:
+        0.6,
+
+      max_completion_tokens:
+        1024,
+
+      reasoning_effort:
+        'low'
+    });
+
+  const answer =
+    response
+      .choices?.[0]
+      ?.message
+      ?.content
+      ?.trim() ||
+    'Non sono riuscito a generare una risposta.';
+
+  history.push({
+    role: 'assistant',
+    content: answer
+  });
+
+  while (
+    history.length >
+    AI_MAX_HISTORY + 1
+  ) {
+    history.splice(
+      1,
+      2
+    );
+  }
+
+  return answer;
+}
+
+async function pauseForDavide(
+  chatId
+) {
+  const pausedUntil =
+    new Date(
+      Date.now() +
+      DAVIDE_PAUSE_MS
+    ).toISOString();
+
+  console.log(
+    '👑 Davide ha scritto per primo.'
+  );
+
+  console.log(
+    '🤫 Bot in pausa per 5 ore.'
+  );
+
+  const saved =
+    await saveChatState(
+      chatId,
+      'davide',
+      pausedUntil
+    );
+
+  clearAIHistory(
+    chatId
+  );
+
+  if (!saved) {
+    console.error(
+      '❌ Impossibile salvare la pausa di Davide.'
+    );
+  } else {
+    console.log(
+      '⏰ Pausa fino a:',
+      pausedUntil
+    );
+  }
+
+  return saved;
+}
+
+async function activateDavideMode(
+  sock,
+  chat
+) {
+  console.log(
+    '👤 Attivazione modalità Davide...'
+  );
+
+  const pausedUntil =
+    new Date(
+      Date.now() +
+      DAVIDE_PAUSE_MS
+    ).toISOString();
+
+  const saved =
+    await saveChatState(
+      chat,
+      'davide',
+      pausedUntil
+    );
+
+  clearAIHistory(
+    chat
+  );
+
+  if (!saved) {
+    await sendTrackedMessage(
+      sock,
+      chat,
+      {
+        text:
+          '❌ Non riesco ad attivare la modalità Davide. Riprova.'
+      }
+    );
+
+    return;
+  }
+
+  await sendTrackedMessage(
+    sock,
+    chat,
+    {
+      text:
+        '👤 *Modalità Davide attivata.*\n\n' +
+        'Il bot resterà in pausa per 5 ore in questa chat.\n\n' +
+        'Se vuoi riattivarlo prima, scrivi */on*.'
+    }
+  );
+}
+
+function getUptime() {
+  const seconds =
+    Math.floor(
+      (Date.now() -
+        botStartTime) /
+      1000
+    );
+
+  const days =
+    Math.floor(
+      seconds / 86400
+    );
+
+  const hours =
+    Math.floor(
+      (seconds % 86400) /
+      3600
+    );
+
+  const minutes =
+    Math.floor(
+      (seconds % 3600) /
+      60
+    );
+
+  const secs =
+    seconds % 60;
+
+  const parts = [];
+
+  if (days) {
+    parts.push(
+      `${days} ${
+        days === 1
+          ? 'giorno'
+          : 'giorni'
+      }`
+    );
+  }
+
+  if (hours) {
+    parts.push(
+      `${hours} ${
+        hours === 1
+          ? 'ora'
+          : 'ore'
+      }`
+    );
+  }
+
+  if (minutes) {
+    parts.push(
+      `${minutes} ${
+        minutes === 1
+          ? 'minuto'
+          : 'minuti'
+      }`
+    );
+  }
+
+  if (
+    secs ||
+    !parts.length
+  ) {
+    parts.push(
+      `${secs} ${
+        secs === 1
+          ? 'secondo'
+          : 'secondi'
+      }`
+    );
+  }
+
+  return parts.join(', ');
+}
 
 async function sendModeSelection(
   sock,
   jid
 ) {
   console.log(
-    "📤 Invio menu Assistente AI / Davide..."
+    '📤 Invio menu Assistente AI / Davide...'
   );
 
   const buttons = [
-
     createQuickReplyButton(
-      "🤖 Assistente AI",
-      "mode_ai"
+      '🤖 Assistente AI',
+      'mode_ai'
     ),
 
     createQuickReplyButton(
-      "👤 Parla con Davide",
-      "mode_davide"
+      '👤 Parla con Davide',
+      'mode_davide'
     )
-
   ];
 
   const interactiveMessage =
-    proto.Message.InteractiveMessage.create({
+    proto.Message
+      .InteractiveMessage
+      .create({
 
-      header:
-        proto.Message
-          .InteractiveMessage
-          .Header
-          .create({
+        header:
+          proto.Message
+            .InteractiveMessage
+            .Header
+            .create({
+              hasMediaAttachment:
+                false
+            }),
 
-            hasMediaAttachment:
-              false
-          }),
+        body:
+          proto.Message
+            .InteractiveMessage
+            .Body
+            .create({
 
-      body:
-        proto.Message
-          .InteractiveMessage
-          .Body
-          .create({
+              text:
+                "Ciao! 👋 Sono l'assistente di Davide 🤖\n\n" +
+                'Scegli come vuoi continuare:'
+            }),
 
-            text:
-              "Ciao! 👋 Sono l'assistente di Davide 🤖\n\n" +
-              "Scegli come vuoi continuare:"
-          }),
+        footer:
+          proto.Message
+            .InteractiveMessage
+            .Footer
+            .create({
 
-      footer:
-        proto.Message
-          .InteractiveMessage
-          .Footer
-          .create({
+              text:
+                'Davide WhatsApp Bot'
+            }),
 
-            text:
-              "Davide WhatsApp Bot"
-          }),
+        nativeFlowMessage:
+          proto.Message
+            .InteractiveMessage
+            .NativeFlowMessage
+            .create({
 
-      nativeFlowMessage:
-        proto.Message
-          .InteractiveMessage
-          .NativeFlowMessage
-          .create({
+              buttons:
+                buttons.map(
+                  b =>
+                    proto.Message
+                      .InteractiveMessage
+                      .NativeFlowMessage
+                      .NativeFlowButton
+                      .create(b)
+                ),
 
-            buttons:
-              buttons.map(
-                (button) =>
-                  proto.Message
-                    .InteractiveMessage
-                    .NativeFlowMessage
-                    .NativeFlowButton
-                    .create({
+              messageParamsJson:
+                '{}',
 
-                      name:
-                        button.name,
-
-                      buttonParamsJson:
-                        button.buttonParamsJson
-                    })
-              ),
-
-            messageParamsJson:
-              "{}",
-
-            messageVersion:
-              1
-          })
-    });
+              messageVersion:
+                1
+            })
+      });
 
   const waMessage =
     generateWAMessageFromContent(
       jid,
+
       {
         interactiveMessage
       },
+
       {
         userJid:
           sock.user?.id
       }
     );
-
-  const bizNode =
-    buildMixedNativeFlowBizNode();
-
-  const botNode = {
-    tag: "bot",
-
-    attrs: {
-      biz_bot: "1"
-    }
-  };
 
   await sock.relayMessage(
     jid,
@@ -733,8 +740,17 @@ async function sendModeSelection(
         waMessage.key.id,
 
       additionalNodes: [
-        botNode,
-        bizNode
+        {
+          tag:
+            'bot',
+
+          attrs: {
+            biz_bot:
+              '1'
+          }
+        },
+
+        buildMixedNativeFlowBizNode()
       ]
     }
   );
@@ -746,139 +762,113 @@ async function sendModeSelection(
   messagesSent++;
 
   console.log(
-    "✅ Menu inviato."
+    '✅ Menu inviato.'
   );
 }
-
-// ======================================================
-// PAGINA COMANDI
-// ======================================================
 
 async function sendCommandsWithButtons(
   sock,
   jid
 ) {
   const buttons = [
-
     createQuickReplyButton(
-      "/stato",
-      "/stato"
+      '/stato',
+      '/stato'
     ),
 
     createQuickReplyButton(
-      "/uptime",
-      "/uptime"
+      '/uptime',
+      '/uptime'
     ),
 
     createQuickReplyButton(
-      "/info",
-      "/info"
+      '/info',
+      '/info'
     ),
 
     createQuickReplyButton(
-      "/statistiche",
-      "/statistiche"
+      '/statistiche',
+      '/statistiche'
     )
-
   ];
 
   const interactiveMessage =
-    proto.Message.InteractiveMessage.create({
+    proto.Message
+      .InteractiveMessage
+      .create({
 
-      header:
-        proto.Message
-          .InteractiveMessage
-          .Header
-          .create({
-            hasMediaAttachment:
-              false
-          }),
+        header:
+          proto.Message
+            .InteractiveMessage
+            .Header
+            .create({
+              hasMediaAttachment:
+                false
+            }),
 
-      body:
-        proto.Message
-          .InteractiveMessage
-          .Body
-          .create({
+        body:
+          proto.Message
+            .InteractiveMessage
+            .Body
+            .create({
 
-            text:
-              "🤖 *COMANDI BOT*\n\n" +
+              text:
+                '🤖 *COMANDI BOT*\n\n' +
+                'Scegli cosa vuoi fare:\n\n' +
+                '📊 */stato* — Controlla lo stato attuale del bot.\n\n' +
+                '🕐 */uptime* — Mostra da quanto tempo il bot è attivo.\n\n' +
+                'ℹ️ */info* — Mostra le informazioni tecniche del bot.\n\n' +
+                '📈 */statistiche* — Mostra le statistiche di utilizzo.\n\n' +
+                '👇 Premi uno dei pulsanti qui sotto.'
+            }),
 
-              "Scegli cosa vuoi fare:\n\n" +
+        footer:
+          proto.Message
+            .InteractiveMessage
+            .Footer
+            .create({
 
-              "📊 */stato* — Controlla lo stato attuale del bot.\n\n" +
+              text:
+                `Davide WhatsApp Bot • v${BOT_VERSION}`
+            }),
 
-              "🕐 */uptime* — Mostra da quanto tempo il bot è attivo.\n\n" +
+        nativeFlowMessage:
+          proto.Message
+            .InteractiveMessage
+            .NativeFlowMessage
+            .create({
 
-              "ℹ️ */info* — Mostra le informazioni tecniche del bot.\n\n" +
+              buttons:
+                buttons.map(
+                  b =>
+                    proto.Message
+                      .InteractiveMessage
+                      .NativeFlowMessage
+                      .NativeFlowButton
+                      .create(b)
+                ),
 
-              "📈 */statistiche* — Mostra le statistiche di utilizzo.\n\n" +
+              messageParamsJson:
+                '{}',
 
-              "👇 Premi uno dei pulsanti qui sotto."
-          }),
-
-      footer:
-        proto.Message
-          .InteractiveMessage
-          .Footer
-          .create({
-
-            text:
-              `Davide WhatsApp Bot • v${BOT_VERSION}`
-          }),
-
-      nativeFlowMessage:
-        proto.Message
-          .InteractiveMessage
-          .NativeFlowMessage
-          .create({
-
-            buttons:
-              buttons.map(
-                (button) =>
-                  proto.Message
-                    .InteractiveMessage
-                    .NativeFlowMessage
-                    .NativeFlowButton
-                    .create({
-
-                      name:
-                        button.name,
-
-                      buttonParamsJson:
-                        button.buttonParamsJson
-                    })
-              ),
-
-            messageParamsJson:
-              "{}",
-
-            messageVersion:
-              1
-          })
-    });
+              messageVersion:
+                1
+            })
+      });
 
   const waMessage =
     generateWAMessageFromContent(
       jid,
+
       {
         interactiveMessage
       },
+
       {
         userJid:
           sock.user?.id
       }
     );
-
-  const bizNode =
-    buildMixedNativeFlowBizNode();
-
-  const botNode = {
-    tag: "bot",
-
-    attrs: {
-      biz_bot: "1"
-    }
-  };
 
   await sock.relayMessage(
     jid,
@@ -888,8 +878,17 @@ async function sendCommandsWithButtons(
         waMessage.key.id,
 
       additionalNodes: [
-        botNode,
-        bizNode
+        {
+          tag:
+            'bot',
+
+          attrs: {
+            biz_bot:
+              '1'
+          }
+        },
+
+        buildMixedNativeFlowBizNode()
       ]
     }
   );
@@ -899,18 +898,9 @@ async function sendCommandsWithButtons(
   );
 
   messagesSent++;
-
-  console.log(
-    "✅ Pagina comandi inviata."
-  );
 }
 
-// ======================================================
-// AVVIO WHATSAPP
-// ======================================================
-
 async function startWhatsApp() {
-
   if (starting) {
     return;
   }
@@ -921,59 +911,45 @@ async function startWhatsApp() {
     Date.now();
 
   try {
-
     console.log(
-      "📱 Avvio WhatsApp Bot v" +
-      BOT_VERSION +
-      "..."
+      `📱 Avvio WhatsApp Bot v${BOT_VERSION}...`
     );
 
-    // ==================================================
-    // TEST SUPABASE
-    // ==================================================
-
     if (supabase) {
-
       try {
-
         const {
           error
         } = await supabase
-          .from("chat_states")
+          .from('chat_states')
           .select(
-            "chat_id",
+            'chat_id',
             {
-              head: true,
-              count: "exact"
+              head:
+                true,
+
+              count:
+                'exact'
             }
           );
 
         if (error) {
-
           console.error(
-            "❌ Supabase non raggiungibile:",
+            '❌ Supabase non raggiungibile:',
             error.message
           );
-
         } else {
-
           console.log(
-            "✅ Connessione Supabase verificata."
+            '✅ Connessione Supabase verificata.'
           );
         }
 
-      } catch (error) {
-
+      } catch (e) {
         console.error(
-          "❌ Errore test Supabase:",
-          error.message
+          '❌ Errore test Supabase:',
+          e.message
         );
       }
     }
-
-    // ==================================================
-    // AUTENTICAZIONE
-    // ==================================================
 
     const {
       state,
@@ -992,12 +968,12 @@ async function startWhatsApp() {
         logger:
           P({
             level:
-              "silent"
+              'silent'
           }),
 
         browser:
           Browsers.macOS(
-            "Google Chrome"
+            'Google Chrome'
           ),
 
         printQRInTerminal:
@@ -1011,17 +987,13 @@ async function startWhatsApp() {
       });
 
     sock.ev.on(
-      "creds.update",
+      'creds.update',
       saveCreds
     );
 
-    // ==================================================
-    // CONNESSIONE
-    // ==================================================
-
     sock.ev.on(
-      "connection.update",
-      async (update) => {
+      'connection.update',
+      async update => {
 
         const {
           connection,
@@ -1030,62 +1002,54 @@ async function startWhatsApp() {
         } = update;
 
         console.log(
-          "📡 Stato WhatsApp:",
+          '📡 Stato WhatsApp:',
           connection ||
-          "waiting"
+          'waiting'
         );
 
         if (qr) {
-
           currentQR =
             qr;
 
           console.log(
-            "📷 QR Code WhatsApp disponibile."
+            '📷 QR Code WhatsApp disponibile.'
           );
         }
 
         if (
           connection ===
-          "open"
+          'open'
         ) {
-
           currentQR =
             null;
 
           whatsappConnected =
             true;
 
-          console.log("");
-
-          console.log(
-            "=========================================="
-          );
-
-          console.log(
-            "        ✅ WHATSAPP COLLEGATO"
-          );
-
-          console.log(
-            "        📦 VERSIONE: " +
-            BOT_VERSION
-          );
-
-          console.log(
-            "=========================================="
-          );
-
-          console.log("");
-
           starting =
             false;
+
+          console.log(
+            '=========================================='
+          );
+
+          console.log(
+            '        ✅ WHATSAPP COLLEGATO'
+          );
+
+          console.log(
+            `        📦 VERSIONE: ${BOT_VERSION}`
+          );
+
+          console.log(
+            '=========================================='
+          );
         }
 
         if (
           connection ===
-          "close"
+          'close'
         ) {
-
           currentQR =
             null;
 
@@ -1099,7 +1063,7 @@ async function startWhatsApp() {
               ?.statusCode;
 
           console.log(
-            "❌ Connessione WhatsApp chiusa:",
+            '❌ Connessione WhatsApp chiusa:',
             statusCode
           );
 
@@ -1110,53 +1074,34 @@ async function startWhatsApp() {
             statusCode ===
             DisconnectReason.loggedOut
           ) {
-
             console.log(
-              "🚪 Sessione WhatsApp disconnessa."
+              '🚪 Sessione WhatsApp disconnessa.'
             );
 
             return;
           }
 
           console.log(
-            "🔄 Riconnessione tra 5 secondi..."
+            '🔄 Riconnessione tra 5 secondi...'
           );
 
           setTimeout(
-            () => {
-              startWhatsApp();
-            },
+            startWhatsApp,
             5000
           );
         }
       }
     );
 
-    // ==================================================
-    // RICEZIONE MESSAGGI
-    // ==================================================
-
     sock.ev.on(
-      "messages.upsert",
+      'messages.upsert',
       async ({
         messages,
         type
       }) => {
 
-        console.log("");
-
         console.log(
-          "📨 EVENTO messages.upsert RICEVUTO"
-        );
-
-        console.log(
-          "Tipo:",
-          type
-        );
-
-        console.log(
-          "Numero messaggi:",
-          messages.length
+          `📨 messages.upsert: ${type} (${messages.length})`
         );
 
         for (
@@ -1165,27 +1110,23 @@ async function startWhatsApp() {
 
           try {
 
-            if (!message) {
-              continue;
-            }
-
-            if (!message.message) {
+            if (
+              !message?.message
+            ) {
               continue;
             }
 
             const chat =
-              message.key.remoteJid;
-
-            // ==================================================
-            // SOLO CHAT PRIVATE
-            // ==================================================
+              message.key
+                .remoteJid;
 
             if (
-              !isPrivateChat(chat)
+              !isPrivateChat(
+                chat
+              )
             ) {
-
               console.log(
-                "👥 Chat non privata. Ignorata:",
+                '👥 Chat non privata. Ignorata:',
                 chat
               );
 
@@ -1193,7 +1134,8 @@ async function startWhatsApp() {
             }
 
             const fromMe =
-              message.key.fromMe;
+              message.key
+                .fromMe;
 
             const text =
               getMessageText(
@@ -1205,49 +1147,24 @@ async function startWhatsApp() {
                 message.message
               ).trim();
 
-            console.log("");
-
             console.log(
-              "=========================================="
-            );
-
-            console.log(
-              "📩 NUOVO MESSAGGIO PRIVATO"
-            );
-
-            console.log(
-              "JID:",
-              chat
-            );
-
-            console.log(
-              "Da me:",
-              fromMe
-            );
-
-            console.log(
-              "Testo:",
+              '📩 Messaggio:',
+              chat,
+              '| daMe:',
+              fromMe,
+              '| testo:',
               text ||
-              "(nessun testo)"
+              '(nessun testo)',
+              '| pulsante:',
+              buttonId ||
+              '-'
             );
 
-            if (buttonId) {
-
-              console.log(
-                "🔘 PULSANTE:",
-                buttonId
-              );
-            }
-
-            // ==================================================
+            // ==========================================
             // MESSAGGIO INVIATO DA DAVIDE
-            // ==================================================
+            // ==========================================
 
             if (fromMe) {
-
-              // ------------------------------------------
-              // SE È UN MESSAGGIO DEL BOT, IGNORALO
-              // ------------------------------------------
 
               if (
                 isBotMessage(
@@ -1256,29 +1173,11 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  "🤖 Messaggio inviato dal bot. Ignorato."
+                  '🤖 Messaggio del bot ignorato.'
                 );
 
                 continue;
               }
-
-              // ------------------------------------------
-              // È DAVIDE CHE HA SCRITTO MANUALMENTE
-              // ------------------------------------------
-
-              console.log(
-                "👑 Davide ha scritto manualmente."
-              );
-
-              /*
-               * IMPORTANTE:
-               *
-               * Quando Davide scrive per primo,
-               * il bot deve stare zitto per 5 ore.
-               *
-               * Non viene inviato nessun messaggio
-               * di conferma.
-               */
 
               await pauseForDavide(
                 chat
@@ -1287,81 +1186,61 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
-            // MESSAGGIO RICEVUTO DALLA PERSONA
-            // ==================================================
-
             messagesReceived++;
-
-            // ==================================================
-            // STATO CHAT
-            // ==================================================
 
             const chatState =
               await getChatState(
                 chat
               );
 
-            console.log(
-              "💾 Stato attuale:",
-              chatState?.mode ||
-              "nessuno"
-            );
+            const lowerText =
+              text.toLowerCase();
 
-            // ==================================================
+            // ==========================================
             // /ON
-            // ==================================================
+            // ==========================================
 
             if (
-              text.toLowerCase() ===
-              "/on"
+              lowerText ===
+              '/on'
             ) {
-
-              console.log(
-                "🟢 /on riconosciuto."
-              );
 
               commandsExecuted++;
 
               await saveChatState(
                 chat,
-                "normal",
+                'normal',
                 null
               );
 
-              /*
-               * NON RISPONDIAMO A /ON.
-               *
-               * Il prossimo messaggio
-               * farà partire il menu.
-               */
+              clearAIHistory(
+                chat
+              );
 
               console.log(
-                "🤫 Bot riattivato. Aspetto il prossimo messaggio."
+                '🟢 /on: bot riattivato, nessuna risposta.'
               );
 
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // MODALITÀ DAVIDE
-            // ==================================================
+            // ==========================================
 
             if (
               chatState?.mode ===
-              "davide"
+              'davide'
             ) {
 
               const pausedUntil =
-                chatState.paused_until
+                chatState
+                  .paused_until
                   ? new Date(
-                      chatState.paused_until
+                      chatState
+                        .paused_until
                     ).getTime()
                   : 0;
-
-              // ------------------------------------------
-              // PAUSA ATTIVA
-              // ------------------------------------------
 
               if (
                 pausedUntil >
@@ -1369,32 +1248,16 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  "🤫 Bot in pausa per questa chat."
-                );
-
-                console.log(
-                  "⏳ Pausa fino a:",
+                  '🤫 Bot in pausa fino a:',
                   chatState.paused_until
                 );
 
                 continue;
               }
 
-              // ------------------------------------------
-              // 5 ORE TERMINATE
-              // ------------------------------------------
-
-              console.log(
-                "⏰ Le 5 ore sono terminate."
-              );
-
-              console.log(
-                "📩 La persona ha scritto per prima."
-              );
-
               await saveChatState(
                 chat,
-                "waiting_choice",
+                'waiting_choice',
                 null
               );
 
@@ -1406,36 +1269,68 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // MODALITÀ AI
-            // ==================================================
+            // ==========================================
 
             if (
               chatState?.mode ===
-              "ai"
+              'ai'
             ) {
 
-              console.log(
-                "🤖 Modalità Assistente AI."
-              );
+              if (!text) {
+                continue;
+              }
 
-              // AI da collegare.
+              try {
+
+                const answer =
+                  await askGroqAI(
+                    chat,
+                    text
+                  );
+
+                await sendTrackedMessage(
+                  sock,
+                  chat,
+                  {
+                    text:
+                      answer
+                  }
+                );
+
+                console.log(
+                  '✅ Risposta AI inviata.'
+                );
+
+              } catch (e) {
+
+                console.error(
+                  '❌ Errore Groq AI:',
+                  e.message
+                );
+
+                await sendTrackedMessage(
+                  sock,
+                  chat,
+                  {
+                    text:
+                      "❌ Al momento non riesco a rispondere con l'Assistente AI. Riprova tra poco."
+                  }
+                );
+              }
 
               continue;
             }
 
-            // ==================================================
-            // PULSANTE PARLA CON DAVIDE
-            // ==================================================
+            // ==========================================
+            // PULSANTE DAVIDE
+            // ==========================================
 
             if (
               buttonId ===
-              "mode_davide"
+              'mode_davide'
             ) {
-
-              console.log(
-                "👤 Pulsante Parla con Davide selezionato."
-              );
 
               await activateDavideMode(
                 sock,
@@ -1445,23 +1340,19 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
-            // PULSANTE ASSISTENTE AI
-            // ==================================================
+            // ==========================================
+            // PULSANTE AI
+            // ==========================================
 
             if (
               buttonId ===
-              "mode_ai"
+              'mode_ai'
             ) {
-
-              console.log(
-                "🤖 Pulsante Assistente AI selezionato."
-              );
 
               const saved =
                 await saveChatState(
                   chat,
-                  "ai",
+                  'ai',
                   null
                 );
 
@@ -1469,26 +1360,37 @@ async function startWhatsApp() {
                 continue;
               }
 
+              clearAIHistory(
+                chat
+              );
+
               await sendTrackedMessage(
                 sock,
                 chat,
                 {
                   text:
-                    "🤖 *Assistente AI attivato.*\n\n" +
-                    "L'intelligenza artificiale verrà collegata nel prossimo passaggio."
+                    '🤖 *Assistente AI attivato.*\n\n' +
+                    'Puoi chiedermi qualsiasi cosa. Ad esempio:\n' +
+                    '• ☀️ Che tempo farà domani?\n' +
+                    '• 🕐 Che ore sono?\n' +
+                    '• 🌐 Traduci questa frase\n' +
+                    '• 🧮 Fammi un calcolo\n' +
+                    '• 📝 Riassumi questo testo\n' +
+                    '• 💬 Oppure scrivimi semplicemente la tua domanda.\n\n' +
+                    'Scrivi qui sotto 👇'
                 }
               );
 
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // /COMANDI
-            // ==================================================
+            // ==========================================
 
             if (
-              text.toLowerCase() ===
-              "/comandi"
+              lowerText ===
+              '/comandi'
             ) {
 
               commandsExecuted++;
@@ -1501,43 +1403,42 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // /STATO
-            // ==================================================
+            // ==========================================
 
             if (
-              text.toLowerCase() ===
-              "/stato"
+              lowerText ===
+              '/stato'
             ) {
 
               commandsExecuted++;
-
-              const stato =
-                whatsappConnected
-                  ? "🟢 Connesso"
-                  : "🔴 Disconnesso";
 
               await sendTrackedMessage(
                 sock,
                 chat,
                 {
                   text:
-                    "📊 *STATO BOT*\n\n" +
-                    `📡 WhatsApp: ${stato}\n` +
-                    "🤖 Bot: 🟢 Attivo"
+                    '📊 *STATO BOT*\n\n' +
+                    `📡 WhatsApp: ${
+                      whatsappConnected
+                        ? '🟢 Connesso'
+                        : '🔴 Disconnesso'
+                    }\n` +
+                    '🤖 Bot: 🟢 Attivo'
                 }
               );
 
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // /UPTIME
-            // ==================================================
+            // ==========================================
 
             if (
-              text.toLowerCase() ===
-              "/uptime"
+              lowerText ===
+              '/uptime'
             ) {
 
               commandsExecuted++;
@@ -1547,8 +1448,8 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    "🕐 *UPTIME BOT*\n\n" +
-                    "Il bot è attivo da:\n\n" +
+                    '🕐 *UPTIME BOT*\n\n' +
+                    'Il bot è attivo da:\n\n' +
                     `*${getUptime()}*`
                 }
               );
@@ -1556,13 +1457,13 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // /INFO
-            // ==================================================
+            // ==========================================
 
             if (
-              text.toLowerCase() ===
-              "/info"
+              lowerText ===
+              '/info'
             ) {
 
               commandsExecuted++;
@@ -1572,24 +1473,24 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    "ℹ️ *INFORMAZIONI BOT*\n\n" +
-                    "🤖 Nome: Davide WhatsApp Bot\n" +
+                    'ℹ️ *INFORMAZIONI BOT*\n\n' +
+                    '🤖 Nome: Davide WhatsApp Bot\n' +
                     `📦 Versione: ${BOT_VERSION}\n` +
-                    "⚡ Motore: Baileys\n" +
-                    "🟢 Sistema: Linux"
+                    '⚡ Motore: Baileys\n' +
+                    '🟢 Sistema: Linux'
                 }
               );
 
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // /STATISTICHE
-            // ==================================================
+            // ==========================================
 
             if (
-              text.toLowerCase() ===
-              "/statistiche"
+              lowerText ===
+              '/statistiche'
             ) {
 
               commandsExecuted++;
@@ -1599,7 +1500,7 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    "📈 *STATISTICHE BOT*\n\n" +
+                    '📈 *STATISTICHE BOT*\n\n' +
                     `📥 Messaggi ricevuti: ${messagesReceived}\n` +
                     `📤 Messaggi inviati: ${messagesSent}\n` +
                     `⚡ Comandi eseguiti: ${commandsExecuted}`
@@ -1609,27 +1510,23 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
-            // CHAT NORMALE / PRIMO MESSAGGIO
-            // ==================================================
+            // ==========================================
+            // PRIMO MESSAGGIO DELLA PERSONA
+            // ==========================================
 
             if (
               !chatState ||
               chatState.mode ===
-              "normal"
+              'normal'
             ) {
 
               console.log(
-                "👤 La persona ha scritto per prima."
-              );
-
-              console.log(
-                "📋 Invio menu di scelta."
+                '👤 La persona ha scritto per prima.'
               );
 
               await saveChatState(
                 chat,
-                "waiting_choice",
+                'waiting_choice',
                 null
               );
 
@@ -1641,21 +1538,21 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // WAITING CHOICE
-            // ==================================================
+            // ==========================================
 
             if (
               chatState.mode ===
-              "waiting_choice"
+              'waiting_choice'
             ) {
 
               console.log(
-                "⏳ La persona ha ignorato i pulsanti."
+                '⏳ La persona ha ignorato i pulsanti.'
               );
 
               console.log(
-                "👤 Il nuovo messaggio viene interpretato come richiesta di parlare con Davide."
+                '👤 Il nuovo messaggio viene interpretato come richiesta di parlare con Davide.'
               );
 
               await activateDavideMode(
@@ -1669,10 +1566,7 @@ async function startWhatsApp() {
           } catch (error) {
 
             console.error(
-              "❌ Errore elaborazione messaggio:"
-            );
-
-            console.error(
+              '❌ Errore elaborazione messaggio:',
               error
             );
           }
@@ -1683,30 +1577,22 @@ async function startWhatsApp() {
   } catch (error) {
 
     console.error(
-      "❌ Errore avvio WhatsApp:"
-    );
-
-    console.error(
+      '❌ Errore avvio WhatsApp:',
       error
     );
 
-    starting = false;
+    starting =
+      false;
 
     whatsappConnected =
       false;
 
     setTimeout(
-      () => {
-        startWhatsApp();
-      },
+      startWhatsApp,
       5000
     );
   }
 }
-
-// ======================================================
-// EXPORT
-// ======================================================
 
 module.exports = {
   startWhatsApp,
