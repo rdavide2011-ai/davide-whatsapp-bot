@@ -5,26 +5,49 @@ const {
   Browsers,
   proto,
   generateWAMessageFromContent
-} = require('@whiskeysockets/baileys');
+} = require("@whiskeysockets/baileys");
 
-const P = require('pino');
-const { createClient } = require('@supabase/supabase-js');
-const Groq = require('groq-sdk');
+const P = require("pino");
+const { createClient } = require("@supabase/supabase-js");
+const Groq = require("groq-sdk");
 
-const AUTH_FOLDER = './auth_info';
-const BOT_VERSION = '1.2.0';
-const DAVIDE_PAUSE_MS = 5 * 60 * 60 * 1000;
-const GROQ_MODEL = 'openai/gpt-oss-20b';
-const AI_MAX_HISTORY = 12;
+const AUTH_FOLDER = "./auth_info";
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+// ======================================================
+// VERSIONE
+// ======================================================
+
+const BOT_VERSION = "1.2.1";
+
+// ======================================================
+// CONFIGURAZIONE
+// ======================================================
+
+const DAVIDE_PAUSE_MS =
+  5 * 60 * 60 * 1000;
+
+const GROQ_MODEL =
+  "openai/gpt-oss-20b";
+
+const AI_MAX_HISTORY =
+  12;
+
+// ======================================================
+// SUPABASE
+// ======================================================
+
+const SUPABASE_URL =
+  process.env.SUPABASE_URL;
+
+const SUPABASE_SECRET_KEY =
+  process.env.SUPABASE_SECRET_KEY;
 
 let supabase = null;
-let groq = null;
 
-if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
+if (
+  SUPABASE_URL &&
+  SUPABASE_SECRET_KEY
+) {
   supabase = createClient(
     SUPABASE_URL,
     SUPABASE_SECRET_KEY,
@@ -37,13 +60,22 @@ if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
   );
 
   console.log(
-    '✅ Supabase configurato correttamente.'
+    "✅ Supabase configurato correttamente."
   );
 } else {
   console.error(
-    '❌ ERRORE: variabili Supabase mancanti.'
+    "❌ ERRORE: variabili Supabase mancanti."
   );
 }
+
+// ======================================================
+// GROQ
+// ======================================================
+
+const GROQ_API_KEY =
+  process.env.GROQ_API_KEY;
+
+let groq = null;
 
 if (GROQ_API_KEY) {
   groq = new Groq({
@@ -51,88 +83,227 @@ if (GROQ_API_KEY) {
   });
 
   console.log(
-    '✅ Groq configurato correttamente.'
+    "✅ Groq configurato correttamente."
   );
 } else {
   console.error(
-    '❌ ERRORE: variabile GROQ_API_KEY mancante.'
+    "❌ ERRORE: variabile GROQ_API_KEY mancante."
   );
 }
+
+// ======================================================
+// STATO BOT
+// ======================================================
 
 let currentQR = null;
 let starting = false;
 let whatsappConnected = false;
 
-let botStartTime = Date.now();
+let botStartTime =
+  Date.now();
 
 let messagesReceived = 0;
 let messagesSent = 0;
 let commandsExecuted = 0;
 
-const botSentMessageIds = new Set();
-const aiConversations = new Map();
+// ======================================================
+// MESSAGGI INVIATI DAL BOT
+// ======================================================
 
-const AI_SYSTEM_PROMPT =
-  "Sei l'Assistente AI di Davide su WhatsApp. " +
-  "Rispondi in italiano salvo diversa richiesta dell'utente. " +
-  "Sei utile, naturale, chiaro e abbastanza conciso. " +
-  "Non fingere di essere Davide e non dire di essere una persona reale. " +
-  "Puoi aiutare con domande, traduzioni, riassunti, spiegazioni e calcoli. " +
-  "Quando una richiesta richiede informazioni in tempo reale che non puoi verificare, " +
-  "dichiara chiaramente il limite invece di inventare dati.";
+const botSentMessageIds =
+  new Set();
 
-function rememberBotMessage(id) {
-  if (!id) return;
+function rememberBotMessage(
+  messageId
+) {
+  if (!messageId) {
+    return;
+  }
 
-  botSentMessageIds.add(id);
+  botSentMessageIds.add(
+    messageId
+  );
 
-  if (botSentMessageIds.size > 500) {
+  if (
+    botSentMessageIds.size >
+    500
+  ) {
+    const firstId =
+      botSentMessageIds
+        .values()
+        .next()
+        .value;
+
     botSentMessageIds.delete(
-      botSentMessageIds.values().next().value
+      firstId
     );
   }
 }
 
-function isBotMessage(id) {
-  if (!id) return false;
+function isBotMessage(
+  messageId
+) {
+  if (!messageId) {
+    return false;
+  }
 
   const result =
-    botSentMessageIds.has(id);
+    botSentMessageIds.has(
+      messageId
+    );
 
   if (result) {
-    botSentMessageIds.delete(id);
+    botSentMessageIds.delete(
+      messageId
+    );
   }
 
   return result;
 }
 
+// ======================================================
+// MEMORIA AI
+// ======================================================
+
+const aiHistories =
+  new Map();
+
+const AI_SYSTEM_PROMPT =
+  "Sei l'Assistente AI personale di Davide su WhatsApp. " +
+  "Rispondi in italiano salvo richiesta diversa. " +
+  "Sii utile, naturale, chiaro e abbastanza conciso. " +
+  "Non fingere di essere Davide e non dire di essere una persona reale. " +
+  "Puoi aiutare con domande, spiegazioni, traduzioni, riassunti e calcoli. " +
+  "Quando una richiesta richiede dati aggiornati che non hai, non inventare informazioni. " +
+  "Il bot può utilizzare strumenti esterni quando il codice glieli fornisce.";
+
+// ======================================================
+// MEMORIA AI
+// ======================================================
+
+function getAIHistory(
+  chatId
+) {
+  if (
+    !aiHistories.has(
+      chatId
+    )
+  ) {
+    aiHistories.set(
+      chatId,
+      [
+        {
+          role: "system",
+          content:
+            AI_SYSTEM_PROMPT
+        }
+      ]
+    );
+  }
+
+  return aiHistories.get(
+    chatId
+  );
+}
+
+function clearAIHistory(
+  chatId
+) {
+  aiHistories.delete(
+    chatId
+  );
+}
+
+function addAIMessage(
+  chatId,
+  role,
+  content
+) {
+  const history =
+    getAIHistory(
+      chatId
+    );
+
+  history.push({
+    role,
+    content
+  });
+
+  while (
+    history.length >
+    AI_MAX_HISTORY + 1
+  ) {
+    history.splice(
+      1,
+      2
+    );
+  }
+}
+
+// ======================================================
+// QR
+// ======================================================
+
 function getQR() {
   return currentQR;
 }
 
-function isPrivateChat(jid) {
-  if (!jid) return false;
+// ======================================================
+// CHAT PRIVATE
+// ======================================================
 
-  if (jid.endsWith('@g.us')) {
+function isPrivateChat(
+  jid
+) {
+  if (!jid) {
     return false;
   }
 
-  if (jid.endsWith('@broadcast')) {
+  if (
+    jid.endsWith("@g.us")
+  ) {
     return false;
   }
 
-  if (jid.endsWith('@newsletter')) {
+  if (
+    jid.endsWith("@broadcast")
+  ) {
     return false;
   }
 
-  return (
-    jid.endsWith('@s.whatsapp.net') ||
-    jid.endsWith('@lid')
-  );
+  if (
+    jid.endsWith("@newsletter")
+  ) {
+    return false;
+  }
+
+  if (
+    jid.endsWith(
+      "@s.whatsapp.net"
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    jid.endsWith("@lid")
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
-function getMessageText(message) {
-  if (!message) return '';
+// ======================================================
+// TESTO MESSAGGIO
+// ======================================================
+
+function getMessageText(
+  message
+) {
+  if (!message) {
+    return "";
+  }
 
   return (
     message.conversation ||
@@ -140,15 +311,24 @@ function getMessageText(message) {
     message.imageMessage?.caption ||
     message.videoMessage?.caption ||
     message.documentMessage?.caption ||
-    ''
+    ""
   );
 }
 
-function getButtonId(message) {
-  if (!message) return '';
+// ======================================================
+// ID PULSANTE
+// ======================================================
+
+function getButtonId(
+  message
+) {
+  if (!message) {
+    return "";
+  }
 
   const response =
-    message.interactiveResponseMessage;
+    message
+      .interactiveResponseMessage;
 
   if (
     response
@@ -166,13 +346,13 @@ function getButtonId(message) {
       return (
         params.id ||
         params.selected_id ||
-        ''
+        ""
       );
 
-    } catch (e) {
+    } catch (error) {
       console.log(
-        '⚠️ Errore lettura pulsante:',
-        e.message
+        "⚠️ Errore lettura pulsante:",
+        error.message
       );
     }
   }
@@ -184,77 +364,98 @@ function getButtonId(message) {
     message
       .templateButtonReplyMessage
       ?.selectedId ||
-    ''
+    ""
   );
 }
 
+// ======================================================
+// TIMESTAMP WHATSAPP
+// ======================================================
+
 function getPrivacyModeTs() {
+  const offset =
+    77980457;
+
   return (
     Math.floor(
       Date.now() / 1000
-    ) - 77980457
+    ) - offset
   ).toString();
 }
 
+// ======================================================
+// BIZ NODE
+// ======================================================
+
 function buildMixedNativeFlowBizNode() {
   return {
-    tag: 'biz',
+    tag: "biz",
 
     attrs: {
-      actual_actors: '2',
-      host_storage: '2',
+      actual_actors: "2",
+      host_storage: "2",
       privacy_mode_ts:
         getPrivacyModeTs()
     },
 
     content: [
       {
-        tag: 'interactive',
+        tag: "interactive",
 
         attrs: {
-          type: 'native_flow',
-          v: '1'
+          type: "native_flow",
+          v: "1"
         },
 
         content: [
           {
-            tag: 'native_flow',
+            tag: "native_flow",
 
             attrs: {
-              v: '9',
-              name: 'mixed'
+              v: "9",
+              name: "mixed"
             }
           }
         ]
       },
 
       {
-        tag: 'quality_control',
+        tag: "quality_control",
 
         attrs: {
-          source_type: 'third_party'
+          source_type:
+            "third_party"
         }
       }
     ]
   };
 }
 
+// ======================================================
+// CREA PULSANTE
+// ======================================================
+
 function createQuickReplyButton(
   displayText,
   id
 ) {
   return {
-    name: 'quick_reply',
+    name: "quick_reply",
 
     buttonParamsJson:
       JSON.stringify({
         display_text:
           displayText,
 
-        id
+        id:
+          id
       })
   };
 }
+
+// ======================================================
+// INVIO MESSAGGIO TRACCIATO
+// ======================================================
 
 async function sendTrackedMessage(
   sock,
@@ -267,7 +468,9 @@ async function sendTrackedMessage(
       content
     );
 
-  if (sent?.key?.id) {
+  if (
+    sent?.key?.id
+  ) {
     rememberBotMessage(
       sent.key.id
     );
@@ -278,7 +481,13 @@ async function sendTrackedMessage(
   return sent;
 }
 
-async function getChatState(chatId) {
+// ======================================================
+// STATO CHAT
+// ======================================================
+
+async function getChatState(
+  chatId
+) {
   if (!supabase) {
     return null;
   }
@@ -288,19 +497,19 @@ async function getChatState(chatId) {
       data,
       error
     } = await supabase
-      .from('chat_states')
+      .from("chat_states")
       .select(
-        'chat_id, mode, paused_until, updated_at'
+        "chat_id, mode, paused_until, updated_at"
       )
       .eq(
-        'chat_id',
+        "chat_id",
         chatId
       )
       .maybeSingle();
 
     if (error) {
       console.error(
-        '❌ Errore lettura stato chat:',
+        "❌ Errore lettura stato chat:",
         error.message
       );
 
@@ -309,19 +518,23 @@ async function getChatState(chatId) {
 
     return data || null;
 
-  } catch (e) {
+  } catch (error) {
     console.error(
-      '❌ Errore Supabase getChatState:',
-      e.message
+      "❌ Errore Supabase:",
+      error.message
     );
 
     return null;
   }
 }
 
+// ======================================================
+// SALVA STATO CHAT
+// ======================================================
+
 async function saveChatState(
   chatId,
-  mode = 'normal',
+  mode = "normal",
   pausedUntil = null
 ) {
   if (!supabase) {
@@ -332,13 +545,14 @@ async function saveChatState(
     const {
       error
     } = await supabase
-      .from('chat_states')
+      .from("chat_states")
       .upsert(
         {
           chat_id:
             chatId,
 
-          mode,
+          mode:
+            mode,
 
           paused_until:
             pausedUntil,
@@ -349,13 +563,13 @@ async function saveChatState(
 
         {
           onConflict:
-            'chat_id'
+            "chat_id"
         }
       );
 
     if (error) {
       console.error(
-        '❌ Errore salvataggio stato:',
+        "❌ Errore salvataggio stato:",
         error.message
       );
 
@@ -363,113 +577,27 @@ async function saveChatState(
     }
 
     console.log(
-      '💾 Stato chat:',
+      "💾 Stato chat:",
       chatId,
-      '→',
-      mode,
-      '| pausa:',
-      pausedUntil ||
-      'nessuna'
+      "→",
+      mode
     );
 
     return true;
 
-  } catch (e) {
+  } catch (error) {
     console.error(
-      '❌ Errore Supabase saveChatState:',
-      e.message
+      "❌ Errore Supabase:",
+      error.message
     );
 
     return false;
   }
 }
 
-function getAIHistory(chatId) {
-  if (!aiConversations.has(chatId)) {
-    aiConversations.set(
-      chatId,
-      [
-        {
-          role: 'system',
-          content:
-            AI_SYSTEM_PROMPT
-        }
-      ]
-    );
-  }
-
-  return aiConversations.get(
-    chatId
-  );
-}
-
-function clearAIHistory(chatId) {
-  aiConversations.delete(
-    chatId
-  );
-}
-
-async function askGroqAI(
-  chatId,
-  userText
-) {
-  if (!groq) {
-    throw new Error(
-      'GROQ_API_KEY non configurata su Railway.'
-    );
-  }
-
-  const history =
-    getAIHistory(chatId);
-
-  history.push({
-    role: 'user',
-    content: userText
-  });
-
-  const response =
-    await groq.chat.completions.create({
-      model:
-        GROQ_MODEL,
-
-      messages:
-        history,
-
-      temperature:
-        0.6,
-
-      max_completion_tokens:
-        1024,
-
-      reasoning_effort:
-        'low'
-    });
-
-  const answer =
-    response
-      .choices?.[0]
-      ?.message
-      ?.content
-      ?.trim() ||
-    'Non sono riuscito a generare una risposta.';
-
-  history.push({
-    role: 'assistant',
-    content: answer
-  });
-
-  while (
-    history.length >
-    AI_MAX_HISTORY + 1
-  ) {
-    history.splice(
-      1,
-      2
-    );
-  }
-
-  return answer;
-}
+// ======================================================
+// PAUSA DAVIDE
+// ======================================================
 
 async function pauseForDavide(
   chatId
@@ -481,17 +609,17 @@ async function pauseForDavide(
     ).toISOString();
 
   console.log(
-    '👑 Davide ha scritto per primo.'
+    "👑 Davide ha scritto per primo."
   );
 
   console.log(
-    '🤫 Bot in pausa per 5 ore.'
+    "🤫 Bot in pausa per 5 ore."
   );
 
   const saved =
     await saveChatState(
       chatId,
-      'davide',
+      "davide",
       pausedUntil
     );
 
@@ -501,24 +629,30 @@ async function pauseForDavide(
 
   if (!saved) {
     console.error(
-      '❌ Impossibile salvare la pausa di Davide.'
+      "❌ Impossibile salvare la pausa."
     );
-  } else {
-    console.log(
-      '⏰ Pausa fino a:',
-      pausedUntil
-    );
+
+    return false;
   }
 
-  return saved;
+  console.log(
+    "⏰ Pausa fino a:",
+    pausedUntil
+  );
+
+  return true;
 }
+
+// ======================================================
+// MODALITÀ DAVIDE
+// ======================================================
 
 async function activateDavideMode(
   sock,
   chat
 ) {
   console.log(
-    '👤 Attivazione modalità Davide...'
+    "👤 Attivazione modalità Davide..."
   );
 
   const pausedUntil =
@@ -530,7 +664,7 @@ async function activateDavideMode(
   const saved =
     await saveChatState(
       chat,
-      'davide',
+      "davide",
       pausedUntil
     );
 
@@ -544,7 +678,7 @@ async function activateDavideMode(
       chat,
       {
         text:
-          '❌ Non riesco ad attivare la modalità Davide. Riprova.'
+          "❌ Non riesco ad attivare la modalità Davide. Riprova."
       }
     );
 
@@ -556,12 +690,1021 @@ async function activateDavideMode(
     chat,
     {
       text:
-        '👤 *Modalità Davide attivata.*\n\n' +
-        'Il bot resterà in pausa per 5 ore in questa chat.\n\n' +
-        'Se vuoi riattivarlo prima, scrivi */on*.'
+        "👤 *Modalità Davide attivata.*\n\n" +
+        "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
+        "Se vuoi riattivarlo prima, scrivi */on*."
     }
   );
 }
+
+// ======================================================
+// METEO — RICONOSCIMENTO RICHIESTA
+// ======================================================
+
+function isWeatherRequest(
+  text
+) {
+  if (!text) {
+    return false;
+  }
+
+  const normalized =
+    text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      );
+
+  const weatherWords = [
+    "meteo",
+    "tempo",
+    "previsioni",
+    "piove",
+    "piovera",
+    "pioggia",
+    "nevica",
+    "neve",
+    "temperatura",
+    "temperature",
+    "clima"
+  ];
+
+  const futureWords = [
+    "domani",
+    "dopodomani",
+    "oggi",
+    "stasera",
+    "questa sera",
+    "questa notte",
+    "stanotte"
+  ];
+
+  return (
+    weatherWords.some(
+      word =>
+        normalized.includes(
+          word
+        )
+    ) &&
+    (
+      futureWords.some(
+        word =>
+          normalized.includes(
+            word
+          )
+      ) ||
+      normalized.includes(
+        "che tempo"
+      ) ||
+      normalized.includes(
+        "che meteo"
+      ) ||
+      normalized.includes(
+        "previsioni"
+      )
+    )
+  );
+}
+
+// ======================================================
+// METEO — ESTRAZIONE CITTÀ
+// ======================================================
+
+function extractWeatherCity(
+  text
+) {
+  if (!text) {
+    return null;
+  }
+
+  const patterns = [
+
+    /(?:tempo|meteo|previsioni|pioggia|temperatura)[^a-zA-ZÀ-ÿ]{0,10}(?:domani|oggi|dopodomani)?[^a-zA-ZÀ-ÿ]{0,10}(?:a|ad|in|per)\s+([a-zA-ZÀ-ÿ' -]{2,60})$/i,
+
+    /(?:domani|oggi|dopodomani)\s+(?:a|ad|in|per)\s+([a-zA-ZÀ-ÿ' -]{2,60})$/i,
+
+    /(?:a|ad|in|per)\s+([a-zA-ZÀ-ÿ' -]{2,60})$/i
+  ];
+
+  for (
+    const pattern of patterns
+  ) {
+    const match =
+      text.match(
+        pattern
+      );
+
+    if (match?.[1]) {
+      return match[1]
+        .trim()
+        .replace(
+          /[?.!,;:]+$/,
+          ""
+        );
+    }
+  }
+
+  return null;
+}
+
+// ======================================================
+// METEO — GEOCODING
+// ======================================================
+
+async function geocodeCity(
+  city
+) {
+  const url =
+    "https://geocoding-api.open-meteo.com/v1/search" +
+    `?name=${encodeURIComponent(city)}` +
+    "&count=5" +
+    "&language=it" +
+    "&format=json";
+
+  try {
+    const response =
+      await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(
+        `Geocoding HTTP ${response.status}`
+      );
+    }
+
+    const data =
+      await response.json();
+
+    if (
+      !data.results ||
+      data.results.length === 0
+    ) {
+      return null;
+    }
+
+    return data.results[0];
+
+  } catch (error) {
+    console.error(
+      "❌ Errore geocoding:",
+      error.message
+    );
+
+    return null;
+  }
+}
+
+// ======================================================
+// METEO — CODICE CONDIZIONE
+// ======================================================
+
+function weatherCodeToText(
+  code
+) {
+  const codes = {
+
+    0:
+      "Cielo sereno",
+
+    1:
+      "Prevalentemente sereno",
+
+    2:
+      "Parzialmente nuvoloso",
+
+    3:
+      "Coperto",
+
+    45:
+      "Nebbia",
+
+    48:
+      "Nebbia con brina",
+
+    51:
+      "Pioviggine debole",
+
+    53:
+      "Pioviggine moderata",
+
+    55:
+      "Pioviggine intensa",
+
+    56:
+      "Pioviggine gelata debole",
+
+    57:
+      "Pioviggine gelata intensa",
+
+    61:
+      "Pioggia debole",
+
+    63:
+      "Pioggia moderata",
+
+    65:
+      "Pioggia intensa",
+
+    66:
+      "Pioggia gelata debole",
+
+    67:
+      "Pioggia gelata intensa",
+
+    71:
+      "Neve debole",
+
+    73:
+      "Neve moderata",
+
+    75:
+      "Neve intensa",
+
+    77:
+      "Granelli di neve",
+
+    80:
+      "Rovesci deboli",
+
+    81:
+      "Rovesci moderati",
+
+    82:
+      "Rovesci intensi",
+
+    85:
+      "Rovesci di neve deboli",
+
+    86:
+      "Rovesci di neve intensi",
+
+    95:
+      "Temporale",
+
+    96:
+      "Temporale con grandine debole",
+
+    99:
+      "Temporale con grandine intensa"
+  };
+
+  return (
+    codes[code] ||
+    "Condizioni meteorologiche non disponibili"
+  );
+}
+
+// ======================================================
+// METEO — EMOJI
+// ======================================================
+
+function weatherCodeToEmoji(
+  code
+) {
+  if (code === 0) {
+    return "☀️";
+  }
+
+  if (
+    code === 1 ||
+    code === 2
+  ) {
+    return "🌤️";
+  }
+
+  if (code === 3) {
+    return "☁️";
+  }
+
+  if (
+    code === 45 ||
+    code === 48
+  ) {
+    return "🌫️";
+  }
+
+  if (
+    code >= 51 &&
+    code <= 67
+  ) {
+    return "🌧️";
+  }
+
+  if (
+    code >= 71 &&
+    code <= 77
+  ) {
+    return "❄️";
+  }
+
+  if (
+    code >= 80 &&
+    code <= 82
+  ) {
+    return "🌦️";
+  }
+
+  if (
+    code >= 85 &&
+    code <= 86
+  ) {
+    return "🌨️";
+  }
+
+  if (
+    code >= 95
+  ) {
+    return "⛈️";
+  }
+
+  return "🌦️";
+}
+
+// ======================================================
+// METEO — DATA DI DOMANI
+// ======================================================
+
+function getTomorrowDate() {
+  const date =
+    new Date();
+
+  date.setDate(
+    date.getDate() + 1
+  );
+
+  return (
+    date
+      .toISOString()
+      .split("T")[0]
+  );
+}
+
+// ======================================================
+// METEO — RECUPERA DATI
+// ======================================================
+
+async function getTomorrowWeather(
+  city
+) {
+  const location =
+    await geocodeCity(
+      city
+    );
+
+  if (!location) {
+    return {
+      found: false
+    };
+  }
+
+  const tomorrow =
+    getTomorrowDate();
+
+  const url =
+    "https://api.open-meteo.com/v1/forecast" +
+    `?latitude=${encodeURIComponent(location.latitude)}` +
+    `&longitude=${encodeURIComponent(location.longitude)}` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+    "&timezone=auto" +
+    `&start_date=${tomorrow}` +
+    `&end_date=${tomorrow}`;
+
+  try {
+    const response =
+      await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(
+        `Meteo HTTP ${response.status}`
+      );
+    }
+
+    const data =
+      await response.json();
+
+    if (
+      !data.daily ||
+      !data.daily.time ||
+      data.daily.time.length === 0
+    ) {
+      return {
+        found: true,
+        weather: null,
+        location
+      };
+    }
+
+    return {
+      found: true,
+
+      weather: {
+        date:
+          data.daily.time[0],
+
+        code:
+          data.daily
+            .weather_code?.[0],
+
+        max:
+          data.daily
+            .temperature_2m_max?.[0],
+
+        min:
+          data.daily
+            .temperature_2m_min?.[0],
+
+        rain:
+          data.daily
+            .precipitation_probability_max?.[0]
+      },
+
+      location
+    };
+
+  } catch (error) {
+    console.error(
+      "❌ Errore API meteo:",
+      error.message
+    );
+
+    return {
+      found: true,
+      weather: null,
+      location
+    };
+  }
+}
+
+// ======================================================
+// METEO — FORMATTA RISPOSTA
+// ======================================================
+
+function formatWeatherResponse(
+  city,
+  result
+) {
+  if (!result.found) {
+    return (
+      "❌ Non riesco a trovare questa città.\n\n" +
+      "Prova a scrivere il nome della città in modo più preciso."
+    );
+  }
+
+  if (!result.weather) {
+    return (
+      "❌ Ho trovato la città, ma non riesco a recuperare le previsioni in questo momento."
+    );
+  }
+
+  const weather =
+    result.weather;
+
+  const location =
+    result.location;
+
+  const country =
+    location.country
+      ? `, ${location.country}`
+      : "";
+
+  const emoji =
+    weatherCodeToEmoji(
+      weather.code
+    );
+
+  const condition =
+    weatherCodeToText(
+      weather.code
+    );
+
+  const max =
+    Number.isFinite(
+      weather.max
+    )
+      ? `${Math.round(weather.max)}°C`
+      : "N/D";
+
+  const min =
+    Number.isFinite(
+      weather.min
+    )
+      ? `${Math.round(weather.min)}°C`
+      : "N/D";
+
+  const rain =
+    Number.isFinite(
+      weather.rain
+    )
+      ? `${Math.round(weather.rain)}%`
+      : "N/D";
+
+  return (
+    `🌦️ *Meteo a ${location.name}${country} — domani*\n\n` +
+    `${emoji} *Condizioni:* ${condition}\n` +
+    `🌡️ *Min:* ${min}\n` +
+    `🌡️ *Max:* ${max}\n` +
+    `🌧️ *Pioggia:* ${rain}`
+  );
+}
+
+// ======================================================
+// METEO — GESTIONE
+// ======================================================
+
+async function handleWeatherRequest(
+  sock,
+  chat,
+  text,
+  chatState
+) {
+  // ----------------------------------------------
+  // L'utente aveva già richiesto il meteo
+  // e stavamo aspettando la città.
+  // ----------------------------------------------
+
+  if (
+    chatState?.mode ===
+    "weather_waiting_city"
+  ) {
+
+    const city =
+      text.trim();
+
+    if (!city) {
+      await sendTrackedMessage(
+        sock,
+        chat,
+        {
+          text:
+            "🌍 Per quale città vuoi sapere il meteo di domani?"
+        }
+      );
+
+      return true;
+    }
+
+    console.log(
+      "🌍 Città ricevuta:",
+      city
+    );
+
+    const result =
+      await getTomorrowWeather(
+        city
+      );
+
+    const response =
+      formatWeatherResponse(
+        city,
+        result
+      );
+
+    await sendTrackedMessage(
+      sock,
+      chat,
+      {
+        text:
+          response
+      }
+    );
+
+    await saveChatState(
+      chat,
+      "ai",
+      null
+    );
+
+    return true;
+  }
+
+  // ----------------------------------------------
+  // Nuova richiesta meteo
+  // ----------------------------------------------
+
+  if (
+    isWeatherRequest(text)
+  ) {
+
+    const city =
+      extractWeatherCity(
+        text
+      );
+
+    // --------------------------------------------
+    // Città presente
+    // --------------------------------------------
+
+    if (city) {
+
+      console.log(
+        "🌍 Richiesta meteo con città:",
+        city
+      );
+
+      const result =
+        await getTomorrowWeather(
+          city
+        );
+
+      const response =
+        formatWeatherResponse(
+          city,
+          result
+        );
+
+      await sendTrackedMessage(
+        sock,
+        chat,
+        {
+          text:
+            response
+        }
+      );
+
+      return true;
+    }
+
+    // --------------------------------------------
+    // Città mancante
+    // --------------------------------------------
+
+    console.log(
+      "🌍 Richiesta meteo senza città."
+    );
+
+    await saveChatState(
+      chat,
+      "weather_waiting_city",
+      null
+    );
+
+    await sendTrackedMessage(
+      sock,
+      chat,
+      {
+        text:
+          "🌍 Certo! Per quale città?"
+      }
+    );
+
+    return true;
+  }
+
+  return false;
+}
+
+// ======================================================
+// GROQ AI
+// ======================================================
+
+async function askGroqAI(
+  chatId,
+  userText
+) {
+  if (!groq) {
+    throw new Error(
+      "GROQ_API_KEY non configurata."
+    );
+  }
+
+  addAIMessage(
+    chatId,
+    "user",
+    userText
+  );
+
+  const history =
+    getAIHistory(
+      chatId
+    );
+
+  const completion =
+    await groq.chat.completions.create({
+
+      model:
+        GROQ_MODEL,
+
+      messages:
+        history,
+
+      temperature:
+        0.6,
+
+      max_completion_tokens:
+        1024,
+
+      reasoning_effort:
+        "low"
+    });
+
+  const answer =
+    completion
+      ?.choices?.[0]
+      ?.message
+      ?.content
+      ?.trim();
+
+  if (!answer) {
+    throw new Error(
+      "Groq non ha restituito una risposta."
+    );
+  }
+
+  addAIMessage(
+    chatId,
+    "assistant",
+    answer
+  );
+
+  return answer;
+}
+
+// ======================================================
+// MENU MODALITÀ
+// ======================================================
+
+async function sendModeSelection(
+  sock,
+  jid
+) {
+  console.log(
+    "📤 Invio menu Assistente AI / Davide..."
+  );
+
+  const buttons = [
+
+    createQuickReplyButton(
+      "🤖 Assistente AI",
+      "mode_ai"
+    ),
+
+    createQuickReplyButton(
+      "👤 Parla con Davide",
+      "mode_davide"
+    )
+
+  ];
+
+  const interactiveMessage =
+    proto.Message
+      .InteractiveMessage
+      .create({
+
+        header:
+          proto.Message
+            .InteractiveMessage
+            .Header
+            .create({
+
+              hasMediaAttachment:
+                false
+            }),
+
+        body:
+          proto.Message
+            .InteractiveMessage
+            .Body
+            .create({
+
+              text:
+                "Ciao! 👋 Sono l'assistente di Davide 🤖\n\n" +
+                "Scegli come vuoi continuare:"
+            }),
+
+        footer:
+          proto.Message
+            .InteractiveMessage
+            .Footer
+            .create({
+
+              text:
+                "Davide WhatsApp Bot"
+            }),
+
+        nativeFlowMessage:
+          proto.Message
+            .InteractiveMessage
+            .NativeFlowMessage
+            .create({
+
+              buttons:
+                buttons.map(
+                  button =>
+                    proto.Message
+                      .InteractiveMessage
+                      .NativeFlowMessage
+                      .NativeFlowButton
+                      .create({
+
+                        name:
+                          button.name,
+
+                        buttonParamsJson:
+                          button.buttonParamsJson
+                      })
+                ),
+
+              messageParamsJson:
+                "{}",
+
+              messageVersion:
+                1
+            })
+      });
+
+  const waMessage =
+    generateWAMessageFromContent(
+      jid,
+      {
+        interactiveMessage
+      },
+      {
+        userJid:
+          sock.user?.id
+      }
+    );
+
+  await sock.relayMessage(
+    jid,
+    waMessage.message,
+    {
+      messageId:
+        waMessage.key.id,
+
+      additionalNodes: [
+        {
+          tag: "bot",
+
+          attrs: {
+            biz_bot:
+              "1"
+          }
+        },
+
+        buildMixedNativeFlowBizNode()
+      ]
+    }
+  );
+
+  rememberBotMessage(
+    waMessage.key.id
+  );
+
+  messagesSent++;
+
+  console.log(
+    "✅ Menu inviato."
+  );
+}
+
+// ======================================================
+// COMANDI
+// ======================================================
+
+async function sendCommandsWithButtons(
+  sock,
+  jid
+) {
+  const buttons = [
+
+    createQuickReplyButton(
+      "/stato",
+      "/stato"
+    ),
+
+    createQuickReplyButton(
+      "/uptime",
+      "/uptime"
+    ),
+
+    createQuickReplyButton(
+      "/info",
+      "/info"
+    ),
+
+    createQuickReplyButton(
+      "/statistiche",
+      "/statistiche"
+    )
+
+  ];
+
+  const interactiveMessage =
+    proto.Message
+      .InteractiveMessage
+      .create({
+
+        header:
+          proto.Message
+            .InteractiveMessage
+            .Header
+            .create({
+              hasMediaAttachment:
+                false
+            }),
+
+        body:
+          proto.Message
+            .InteractiveMessage
+            .Body
+            .create({
+
+              text:
+                "🤖 *COMANDI BOT*\n\n" +
+                "Scegli cosa vuoi fare:\n\n" +
+                "📊 */stato* — Controlla lo stato attuale del bot.\n\n" +
+                "🕐 */uptime* — Mostra da quanto tempo il bot è attivo.\n\n" +
+                "ℹ️ */info* — Mostra le informazioni tecniche del bot.\n\n" +
+                "📈 */statistiche* — Mostra le statistiche di utilizzo.\n\n" +
+                "👇 Premi uno dei pulsanti qui sotto."
+            }),
+
+        footer:
+          proto.Message
+            .InteractiveMessage
+            .Footer
+            .create({
+
+              text:
+                `Davide WhatsApp Bot • v${BOT_VERSION}`
+            }),
+
+        nativeFlowMessage:
+          proto.Message
+            .InteractiveMessage
+            .NativeFlowMessage
+            .create({
+
+              buttons:
+                buttons.map(
+                  button =>
+                    proto.Message
+                      .InteractiveMessage
+                      .NativeFlowMessage
+                      .NativeFlowButton
+                      .create({
+
+                        name:
+                          button.name,
+
+                        buttonParamsJson:
+                          button.buttonParamsJson
+                      })
+                ),
+
+              messageParamsJson:
+                "{}",
+
+              messageVersion:
+                1
+            })
+      });
+
+  const waMessage =
+    generateWAMessageFromContent(
+      jid,
+      {
+        interactiveMessage
+      },
+      {
+        userJid:
+          sock.user?.id
+      }
+    );
+
+  await sock.relayMessage(
+    jid,
+    waMessage.message,
+    {
+      messageId:
+        waMessage.key.id,
+
+      additionalNodes: [
+        {
+          tag: "bot",
+
+          attrs: {
+            biz_bot:
+              "1"
+          }
+        },
+
+        buildMixedNativeFlowBizNode()
+      ]
+    }
+  );
+
+  rememberBotMessage(
+    waMessage.key.id
+  );
+
+  messagesSent++;
+}
+
+// ======================================================
+// UPTIME
+// ======================================================
 
 function getUptime() {
   const seconds =
@@ -593,314 +1736,60 @@ function getUptime() {
 
   const parts = [];
 
-  if (days) {
+  if (days > 0) {
     parts.push(
       `${days} ${
         days === 1
-          ? 'giorno'
-          : 'giorni'
+          ? "giorno"
+          : "giorni"
       }`
     );
   }
 
-  if (hours) {
+  if (hours > 0) {
     parts.push(
       `${hours} ${
         hours === 1
-          ? 'ora'
-          : 'ore'
+          ? "ora"
+          : "ore"
       }`
     );
   }
 
-  if (minutes) {
+  if (minutes > 0) {
     parts.push(
       `${minutes} ${
         minutes === 1
-          ? 'minuto'
-          : 'minuti'
+          ? "minuto"
+          : "minuti"
       }`
     );
   }
 
   if (
-    secs ||
-    !parts.length
+    secs > 0 ||
+    parts.length === 0
   ) {
     parts.push(
       `${secs} ${
         secs === 1
-          ? 'secondo'
-          : 'secondi'
+          ? "secondo"
+          : "secondi"
       }`
     );
   }
 
-  return parts.join(', ');
-}
-
-async function sendModeSelection(
-  sock,
-  jid
-) {
-  console.log(
-    '📤 Invio menu Assistente AI / Davide...'
-  );
-
-  const buttons = [
-    createQuickReplyButton(
-      '🤖 Assistente AI',
-      'mode_ai'
-    ),
-
-    createQuickReplyButton(
-      '👤 Parla con Davide',
-      'mode_davide'
-    )
-  ];
-
-  const interactiveMessage =
-    proto.Message
-      .InteractiveMessage
-      .create({
-
-        header:
-          proto.Message
-            .InteractiveMessage
-            .Header
-            .create({
-              hasMediaAttachment:
-                false
-            }),
-
-        body:
-          proto.Message
-            .InteractiveMessage
-            .Body
-            .create({
-
-              text:
-                "Ciao! 👋 Sono l'assistente di Davide 🤖\n\n" +
-                'Scegli come vuoi continuare:'
-            }),
-
-        footer:
-          proto.Message
-            .InteractiveMessage
-            .Footer
-            .create({
-
-              text:
-                'Davide WhatsApp Bot'
-            }),
-
-        nativeFlowMessage:
-          proto.Message
-            .InteractiveMessage
-            .NativeFlowMessage
-            .create({
-
-              buttons:
-                buttons.map(
-                  b =>
-                    proto.Message
-                      .InteractiveMessage
-                      .NativeFlowMessage
-                      .NativeFlowButton
-                      .create(b)
-                ),
-
-              messageParamsJson:
-                '{}',
-
-              messageVersion:
-                1
-            })
-      });
-
-  const waMessage =
-    generateWAMessageFromContent(
-      jid,
-
-      {
-        interactiveMessage
-      },
-
-      {
-        userJid:
-          sock.user?.id
-      }
-    );
-
-  await sock.relayMessage(
-    jid,
-    waMessage.message,
-    {
-      messageId:
-        waMessage.key.id,
-
-      additionalNodes: [
-        {
-          tag:
-            'bot',
-
-          attrs: {
-            biz_bot:
-              '1'
-          }
-        },
-
-        buildMixedNativeFlowBizNode()
-      ]
-    }
-  );
-
-  rememberBotMessage(
-    waMessage.key.id
-  );
-
-  messagesSent++;
-
-  console.log(
-    '✅ Menu inviato.'
+  return parts.join(
+    ", "
   );
 }
 
-async function sendCommandsWithButtons(
-  sock,
-  jid
-) {
-  const buttons = [
-    createQuickReplyButton(
-      '/stato',
-      '/stato'
-    ),
-
-    createQuickReplyButton(
-      '/uptime',
-      '/uptime'
-    ),
-
-    createQuickReplyButton(
-      '/info',
-      '/info'
-    ),
-
-    createQuickReplyButton(
-      '/statistiche',
-      '/statistiche'
-    )
-  ];
-
-  const interactiveMessage =
-    proto.Message
-      .InteractiveMessage
-      .create({
-
-        header:
-          proto.Message
-            .InteractiveMessage
-            .Header
-            .create({
-              hasMediaAttachment:
-                false
-            }),
-
-        body:
-          proto.Message
-            .InteractiveMessage
-            .Body
-            .create({
-
-              text:
-                '🤖 *COMANDI BOT*\n\n' +
-                'Scegli cosa vuoi fare:\n\n' +
-                '📊 */stato* — Controlla lo stato attuale del bot.\n\n' +
-                '🕐 */uptime* — Mostra da quanto tempo il bot è attivo.\n\n' +
-                'ℹ️ */info* — Mostra le informazioni tecniche del bot.\n\n' +
-                '📈 */statistiche* — Mostra le statistiche di utilizzo.\n\n' +
-                '👇 Premi uno dei pulsanti qui sotto.'
-            }),
-
-        footer:
-          proto.Message
-            .InteractiveMessage
-            .Footer
-            .create({
-
-              text:
-                `Davide WhatsApp Bot • v${BOT_VERSION}`
-            }),
-
-        nativeFlowMessage:
-          proto.Message
-            .InteractiveMessage
-            .NativeFlowMessage
-            .create({
-
-              buttons:
-                buttons.map(
-                  b =>
-                    proto.Message
-                      .InteractiveMessage
-                      .NativeFlowMessage
-                      .NativeFlowButton
-                      .create(b)
-                ),
-
-              messageParamsJson:
-                '{}',
-
-              messageVersion:
-                1
-            })
-      });
-
-  const waMessage =
-    generateWAMessageFromContent(
-      jid,
-
-      {
-        interactiveMessage
-      },
-
-      {
-        userJid:
-          sock.user?.id
-      }
-    );
-
-  await sock.relayMessage(
-    jid,
-    waMessage.message,
-    {
-      messageId:
-        waMessage.key.id,
-
-      additionalNodes: [
-        {
-          tag:
-            'bot',
-
-          attrs: {
-            biz_bot:
-              '1'
-          }
-        },
-
-        buildMixedNativeFlowBizNode()
-      ]
-    }
-  );
-
-  rememberBotMessage(
-    waMessage.key.id
-  );
-
-  messagesSent++;
-}
+// ======================================================
+// AVVIO WHATSAPP
+// ======================================================
 
 async function startWhatsApp() {
+
   if (starting) {
     return;
   }
@@ -911,45 +1800,60 @@ async function startWhatsApp() {
     Date.now();
 
   try {
+
     console.log(
       `📱 Avvio WhatsApp Bot v${BOT_VERSION}...`
     );
 
+    // ==================================================
+    // TEST SUPABASE
+    // ==================================================
+
     if (supabase) {
+
       try {
+
         const {
           error
         } = await supabase
-          .from('chat_states')
+          .from("chat_states")
           .select(
-            'chat_id',
+            "chat_id",
             {
               head:
                 true,
 
               count:
-                'exact'
+                "exact"
             }
           );
 
         if (error) {
+
           console.error(
-            '❌ Supabase non raggiungibile:',
+            "❌ Supabase non raggiungibile:",
             error.message
           );
+
         } else {
+
           console.log(
-            '✅ Connessione Supabase verificata.'
+            "✅ Connessione Supabase verificata."
           );
         }
 
-      } catch (e) {
+      } catch (error) {
+
         console.error(
-          '❌ Errore test Supabase:',
-          e.message
+          "❌ Errore test Supabase:",
+          error.message
         );
       }
     }
+
+    // ==================================================
+    // AUTENTICAZIONE
+    // ==================================================
 
     const {
       state,
@@ -968,12 +1872,12 @@ async function startWhatsApp() {
         logger:
           P({
             level:
-              'silent'
+              "silent"
           }),
 
         browser:
           Browsers.macOS(
-            'Google Chrome'
+            "Google Chrome"
           ),
 
         printQRInTerminal:
@@ -987,12 +1891,16 @@ async function startWhatsApp() {
       });
 
     sock.ev.on(
-      'creds.update',
+      "creds.update",
       saveCreds
     );
 
+    // ==================================================
+    // CONNESSIONE
+    // ==================================================
+
     sock.ev.on(
-      'connection.update',
+      "connection.update",
       async update => {
 
         const {
@@ -1002,24 +1910,26 @@ async function startWhatsApp() {
         } = update;
 
         console.log(
-          '📡 Stato WhatsApp:',
+          "📡 Stato WhatsApp:",
           connection ||
-          'waiting'
+          "waiting"
         );
 
         if (qr) {
+
           currentQR =
             qr;
 
           console.log(
-            '📷 QR Code WhatsApp disponibile.'
+            "📷 QR Code WhatsApp disponibile."
           );
         }
 
         if (
           connection ===
-          'open'
+          "open"
         ) {
+
           currentQR =
             null;
 
@@ -1029,12 +1939,14 @@ async function startWhatsApp() {
           starting =
             false;
 
+          console.log("");
+
           console.log(
-            '=========================================='
+            "=========================================="
           );
 
           console.log(
-            '        ✅ WHATSAPP COLLEGATO'
+            "        ✅ WHATSAPP COLLEGATO"
           );
 
           console.log(
@@ -1042,14 +1954,18 @@ async function startWhatsApp() {
           );
 
           console.log(
-            '=========================================='
+            "=========================================="
           );
+
+          console.log("");
+
         }
 
         if (
           connection ===
-          'close'
+          "close"
         ) {
+
           currentQR =
             null;
 
@@ -1063,7 +1979,7 @@ async function startWhatsApp() {
               ?.statusCode;
 
           console.log(
-            '❌ Connessione WhatsApp chiusa:',
+            "❌ Connessione WhatsApp chiusa:",
             statusCode
           );
 
@@ -1074,34 +1990,53 @@ async function startWhatsApp() {
             statusCode ===
             DisconnectReason.loggedOut
           ) {
+
             console.log(
-              '🚪 Sessione WhatsApp disconnessa.'
+              "🚪 Sessione WhatsApp disconnessa."
             );
 
             return;
           }
 
           console.log(
-            '🔄 Riconnessione tra 5 secondi...'
+            "🔄 Riconnessione tra 5 secondi..."
           );
 
           setTimeout(
-            startWhatsApp,
+            () => {
+              startWhatsApp();
+            },
             5000
           );
         }
       }
     );
 
+    // ==================================================
+    // MESSAGGI
+    // ==================================================
+
     sock.ev.on(
-      'messages.upsert',
+      "messages.upsert",
       async ({
         messages,
         type
       }) => {
 
+        console.log("");
+
         console.log(
-          `📨 messages.upsert: ${type} (${messages.length})`
+          "📨 EVENTO messages.upsert RICEVUTO"
+        );
+
+        console.log(
+          "Tipo:",
+          type
+        );
+
+        console.log(
+          "Numero messaggi:",
+          messages.length
         );
 
         for (
@@ -1110,23 +2045,27 @@ async function startWhatsApp() {
 
           try {
 
-            if (
-              !message?.message
-            ) {
+            if (!message) {
+              continue;
+            }
+
+            if (!message.message) {
               continue;
             }
 
             const chat =
-              message.key
-                .remoteJid;
+              message.key.remoteJid;
+
+            // ==================================================
+            // SOLO CHAT PRIVATE
+            // ==================================================
 
             if (
-              !isPrivateChat(
-                chat
-              )
+              !isPrivateChat(chat)
             ) {
+
               console.log(
-                '👥 Chat non privata. Ignorata:',
+                "👥 Chat non privata. Ignorata:",
                 chat
               );
 
@@ -1134,8 +2073,7 @@ async function startWhatsApp() {
             }
 
             const fromMe =
-              message.key
-                .fromMe;
+              message.key.fromMe;
 
             const text =
               getMessageText(
@@ -1147,22 +2085,43 @@ async function startWhatsApp() {
                 message.message
               ).trim();
 
+            console.log("");
+
             console.log(
-              '📩 Messaggio:',
-              chat,
-              '| daMe:',
-              fromMe,
-              '| testo:',
-              text ||
-              '(nessun testo)',
-              '| pulsante:',
-              buttonId ||
-              '-'
+              "=========================================="
             );
 
-            // ==========================================
-            // MESSAGGIO INVIATO DA DAVIDE
-            // ==========================================
+            console.log(
+              "📩 NUOVO MESSAGGIO PRIVATO"
+            );
+
+            console.log(
+              "JID:",
+              chat
+            );
+
+            console.log(
+              "Da me:",
+              fromMe
+            );
+
+            console.log(
+              "Testo:",
+              text ||
+              "(nessun testo)"
+            );
+
+            if (buttonId) {
+
+              console.log(
+                "🔘 PULSANTE:",
+                buttonId
+              );
+            }
+
+            // ==================================================
+            // MESSAGGIO DI DAVIDE
+            // ==================================================
 
             if (fromMe) {
 
@@ -1173,11 +2132,15 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  '🤖 Messaggio del bot ignorato.'
+                  "🤖 Messaggio inviato dal bot. Ignorato."
                 );
 
                 continue;
               }
+
+              console.log(
+                "👑 Davide ha scritto manualmente."
+              );
 
               await pauseForDavide(
                 chat
@@ -1188,28 +2151,42 @@ async function startWhatsApp() {
 
             messagesReceived++;
 
+            // ==================================================
+            // STATO CHAT
+            // ==================================================
+
             const chatState =
               await getChatState(
                 chat
               );
 
+            console.log(
+              "💾 Stato attuale:",
+              chatState?.mode ||
+              "nessuno"
+            );
+
             const lowerText =
               text.toLowerCase();
 
-            // ==========================================
+            // ==================================================
             // /ON
-            // ==========================================
+            // ==================================================
 
             if (
               lowerText ===
-              '/on'
+              "/on"
             ) {
+
+              console.log(
+                "🟢 /on riconosciuto."
+              );
 
               commandsExecuted++;
 
               await saveChatState(
                 chat,
-                'normal',
+                "normal",
                 null
               );
 
@@ -1218,27 +2195,25 @@ async function startWhatsApp() {
               );
 
               console.log(
-                '🟢 /on: bot riattivato, nessuna risposta.'
+                "🤫 Bot riattivato. Aspetto il prossimo messaggio."
               );
 
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // MODALITÀ DAVIDE
-            // ==========================================
+            // ==================================================
 
             if (
               chatState?.mode ===
-              'davide'
+              "davide"
             ) {
 
               const pausedUntil =
-                chatState
-                  .paused_until
+                chatState.paused_until
                   ? new Date(
-                      chatState
-                        .paused_until
+                      chatState.paused_until
                     ).getTime()
                   : 0;
 
@@ -1248,16 +2223,24 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  '🤫 Bot in pausa fino a:',
+                  "🤫 Bot in pausa."
+                );
+
+                console.log(
+                  "⏳ Pausa fino a:",
                   chatState.paused_until
                 );
 
                 continue;
               }
 
+              console.log(
+                "⏰ Le 5 ore sono terminate."
+              );
+
               await saveChatState(
                 chat,
-                'waiting_choice',
+                "waiting_choice",
                 null
               );
 
@@ -1269,20 +2252,83 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
-            // MODALITÀ AI
-            // ==========================================
+            // ==================================================
+            // METEO IN ATTESA DELLA CITTÀ
+            // ==================================================
 
             if (
               chatState?.mode ===
-              'ai'
+              "weather_waiting_city"
+            ) {
+
+              console.log(
+                "🌍 Risposta alla richiesta della città."
+              );
+
+              await handleWeatherRequest(
+                sock,
+                chat,
+                text,
+                chatState
+              );
+
+              continue;
+            }
+
+            // ==================================================
+            // MODALITÀ AI
+            // ==================================================
+
+            if (
+              chatState?.mode ===
+              "ai"
             ) {
 
               if (!text) {
                 continue;
               }
 
+              // ----------------------------------------------
+              // METEO
+              // ----------------------------------------------
+
+              const weatherHandled =
+                await handleWeatherRequest(
+                  sock,
+                  chat,
+                  text,
+                  chatState
+                );
+
+              if (
+                weatherHandled
+              ) {
+                continue;
+              }
+
+              // ----------------------------------------------
+              // AI GENERALE
+              // ----------------------------------------------
+
+              if (!groq) {
+
+                await sendTrackedMessage(
+                  sock,
+                  chat,
+                  {
+                    text:
+                      "❌ L'Assistente AI non è configurato correttamente."
+                  }
+                );
+
+                continue;
+              }
+
               try {
+
+                console.log(
+                  "🤖 Invio richiesta a Groq..."
+                );
 
                 const answer =
                   await askGroqAI(
@@ -1300,14 +2346,14 @@ async function startWhatsApp() {
                 );
 
                 console.log(
-                  '✅ Risposta AI inviata.'
+                  "✅ Risposta AI inviata."
                 );
 
-              } catch (e) {
+              } catch (error) {
 
                 console.error(
-                  '❌ Errore Groq AI:',
-                  e.message
+                  "❌ Errore Groq:",
+                  error.message
                 );
 
                 await sendTrackedMessage(
@@ -1315,7 +2361,7 @@ async function startWhatsApp() {
                   chat,
                   {
                     text:
-                      "❌ Al momento non riesco a rispondere con l'Assistente AI. Riprova tra poco."
+                      "❌ Al momento non riesco a rispondere. Riprova tra poco."
                   }
                 );
               }
@@ -1323,14 +2369,18 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
-            // PULSANTE DAVIDE
-            // ==========================================
+            // ==================================================
+            // PULSANTE PARLA CON DAVIDE
+            // ==================================================
 
             if (
               buttonId ===
-              'mode_davide'
+              "mode_davide"
             ) {
+
+              console.log(
+                "👤 Parla con Davide selezionato."
+              );
 
               await activateDavideMode(
                 sock,
@@ -1340,19 +2390,23 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
-            // PULSANTE AI
-            // ==========================================
+            // ==================================================
+            // PULSANTE ASSISTENTE AI
+            // ==================================================
 
             if (
               buttonId ===
-              'mode_ai'
+              "mode_ai"
             ) {
+
+              console.log(
+                "🤖 Assistente AI selezionato."
+              );
 
               const saved =
                 await saveChatState(
                   chat,
-                  'ai',
+                  "ai",
                   null
                 );
 
@@ -1369,28 +2423,27 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    '🤖 *Assistente AI attivato.*\n\n' +
-                    'Puoi chiedermi qualsiasi cosa. Ad esempio:\n' +
-                    '• ☀️ Che tempo farà domani?\n' +
-                    '• 🕐 Che ore sono?\n' +
-                    '• 🌐 Traduci questa frase\n' +
-                    '• 🧮 Fammi un calcolo\n' +
-                    '• 📝 Riassumi questo testo\n' +
-                    '• 💬 Oppure scrivimi semplicemente la tua domanda.\n\n' +
-                    'Scrivi qui sotto 👇'
+                    "🤖 *Assistente AI attivato.*\n\n" +
+                    "Puoi chiedermi qualsiasi cosa.\n\n" +
+                    "🌦️ Ad esempio: *Che tempo farà domani?*\n" +
+                    "🕐 Puoi chiedermi l'ora.\n" +
+                    "🌐 Puoi chiedermi una traduzione.\n" +
+                    "🧮 Puoi chiedermi un calcolo.\n" +
+                    "📝 Puoi chiedermi di riassumere un testo.\n\n" +
+                    "Scrivimi qui sotto 👇"
                 }
               );
 
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // /COMANDI
-            // ==========================================
+            // ==================================================
 
             if (
               lowerText ===
-              '/comandi'
+              "/comandi"
             ) {
 
               commandsExecuted++;
@@ -1403,42 +2456,43 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // /STATO
-            // ==========================================
+            // ==================================================
 
             if (
               lowerText ===
-              '/stato'
+              "/stato"
             ) {
 
               commandsExecuted++;
+
+              const stato =
+                whatsappConnected
+                  ? "🟢 Connesso"
+                  : "🔴 Disconnesso";
 
               await sendTrackedMessage(
                 sock,
                 chat,
                 {
                   text:
-                    '📊 *STATO BOT*\n\n' +
-                    `📡 WhatsApp: ${
-                      whatsappConnected
-                        ? '🟢 Connesso'
-                        : '🔴 Disconnesso'
-                    }\n` +
-                    '🤖 Bot: 🟢 Attivo'
+                    "📊 *STATO BOT*\n\n" +
+                    `📡 WhatsApp: ${stato}\n` +
+                    "🤖 Bot: 🟢 Attivo"
                 }
               );
 
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // /UPTIME
-            // ==========================================
+            // ==================================================
 
             if (
               lowerText ===
-              '/uptime'
+              "/uptime"
             ) {
 
               commandsExecuted++;
@@ -1448,8 +2502,8 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    '🕐 *UPTIME BOT*\n\n' +
-                    'Il bot è attivo da:\n\n' +
+                    "🕐 *UPTIME BOT*\n\n" +
+                    "Il bot è attivo da:\n\n" +
                     `*${getUptime()}*`
                 }
               );
@@ -1457,13 +2511,13 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // /INFO
-            // ==========================================
+            // ==================================================
 
             if (
               lowerText ===
-              '/info'
+              "/info"
             ) {
 
               commandsExecuted++;
@@ -1473,24 +2527,24 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    'ℹ️ *INFORMAZIONI BOT*\n\n' +
-                    '🤖 Nome: Davide WhatsApp Bot\n' +
+                    "ℹ️ *INFORMAZIONI BOT*\n\n" +
+                    "🤖 Nome: Davide WhatsApp Bot\n" +
                     `📦 Versione: ${BOT_VERSION}\n` +
-                    '⚡ Motore: Baileys\n' +
-                    '🟢 Sistema: Linux'
+                    "⚡ Motore: Baileys\n" +
+                    "🟢 Sistema: Linux"
                 }
               );
 
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // /STATISTICHE
-            // ==========================================
+            // ==================================================
 
             if (
               lowerText ===
-              '/statistiche'
+              "/statistiche"
             ) {
 
               commandsExecuted++;
@@ -1500,7 +2554,7 @@ async function startWhatsApp() {
                 chat,
                 {
                   text:
-                    '📈 *STATISTICHE BOT*\n\n' +
+                    "📈 *STATISTICHE BOT*\n\n" +
                     `📥 Messaggi ricevuti: ${messagesReceived}\n` +
                     `📤 Messaggi inviati: ${messagesSent}\n` +
                     `⚡ Comandi eseguiti: ${commandsExecuted}`
@@ -1510,23 +2564,23 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
-            // PRIMO MESSAGGIO DELLA PERSONA
-            // ==========================================
+            // ==================================================
+            // CHAT NORMALE
+            // ==================================================
 
             if (
               !chatState ||
               chatState.mode ===
-              'normal'
+              "normal"
             ) {
 
               console.log(
-                '👤 La persona ha scritto per prima.'
+                "👤 La persona ha scritto per prima."
               );
 
               await saveChatState(
                 chat,
-                'waiting_choice',
+                "waiting_choice",
                 null
               );
 
@@ -1538,21 +2592,21 @@ async function startWhatsApp() {
               continue;
             }
 
-            // ==========================================
+            // ==================================================
             // WAITING CHOICE
-            // ==========================================
+            // ==================================================
 
             if (
               chatState.mode ===
-              'waiting_choice'
+              "waiting_choice"
             ) {
 
               console.log(
-                '⏳ La persona ha ignorato i pulsanti.'
+                "⏳ La persona ha ignorato i pulsanti."
               );
 
               console.log(
-                '👤 Il nuovo messaggio viene interpretato come richiesta di parlare con Davide.'
+                "👤 Interpreto il nuovo messaggio come richiesta di parlare con Davide."
               );
 
               await activateDavideMode(
@@ -1566,7 +2620,10 @@ async function startWhatsApp() {
           } catch (error) {
 
             console.error(
-              '❌ Errore elaborazione messaggio:',
+              "❌ Errore elaborazione messaggio:"
+            );
+
+            console.error(
               error
             );
           }
@@ -1577,7 +2634,10 @@ async function startWhatsApp() {
   } catch (error) {
 
     console.error(
-      '❌ Errore avvio WhatsApp:',
+      "❌ Errore avvio WhatsApp:"
+    );
+
+    console.error(
       error
     );
 
@@ -1588,11 +2648,17 @@ async function startWhatsApp() {
       false;
 
     setTimeout(
-      startWhatsApp,
+      () => {
+        startWhatsApp();
+      },
       5000
     );
   }
 }
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = {
   startWhatsApp,
