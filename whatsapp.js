@@ -15,7 +15,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE BOT
 // ======================================================
 
-const BOT_VERSION = "1.0.2";
+const BOT_VERSION = "1.0.3";
 
 // ======================================================
 // STATO BOT
@@ -39,6 +39,44 @@ let commandsExecuted = 0;
 
 function getQR() {
   return currentQR;
+}
+
+// ======================================================
+// CONTROLLA SE È UNA CHAT PRIVATA
+// ======================================================
+
+function isPrivateChat(jid) {
+
+  if (!jid) {
+    return false;
+  }
+
+  // Gruppi
+  if (jid.endsWith("@g.us")) {
+    return false;
+  }
+
+  // Broadcast
+  if (jid.endsWith("@broadcast")) {
+    return false;
+  }
+
+  // Canali / Newsletter
+  if (jid.endsWith("@newsletter")) {
+    return false;
+  }
+
+  // Chat private WhatsApp
+  if (jid.endsWith("@s.whatsapp.net")) {
+    return true;
+  }
+
+  // Chat private con LID
+  if (jid.endsWith("@lid")) {
+    return true;
+  }
+
+  return false;
 }
 
 // ======================================================
@@ -382,13 +420,11 @@ async function sendWelcomeWithButton(
 
   };
 
-  const isGroup =
-    jid.endsWith("@g.us");
-
   const additionalNodes =
-    isGroup
-      ? [bizNode]
-      : [botNode, bizNode];
+    [
+      botNode,
+      bizNode
+    ];
 
   await sock.relayMessage(
 
@@ -555,14 +591,6 @@ async function sendCommandsWithButtons(
 
   };
 
-  const isGroup =
-    jid.endsWith("@g.us");
-
-  const additionalNodes =
-    isGroup
-      ? [bizNode]
-      : [botNode, bizNode];
-
   await sock.relayMessage(
 
     jid,
@@ -574,7 +602,10 @@ async function sendCommandsWithButtons(
       messageId:
         waMessage.key.id,
 
-      additionalNodes
+      additionalNodes: [
+        botNode,
+        bizNode
+      ]
 
     }
 
@@ -829,6 +860,22 @@ async function startWhatsApp() {
             const chat =
               message.key.remoteJid;
 
+            // ==================================================
+            // SOLO CHAT PRIVATE
+            // ==================================================
+
+            if (
+              !isPrivateChat(chat)
+            ) {
+
+              console.log(
+                "👥 Chat non privata rilevata. Bot ignorato:",
+                chat
+              );
+
+              continue;
+            }
+
             const fromMe =
               message.key.fromMe;
 
@@ -848,7 +895,7 @@ async function startWhatsApp() {
             );
 
             console.log(
-              "📩 NUOVO MESSAGGIO"
+              "📩 NUOVO MESSAGGIO PRIVATO"
             );
 
             console.log(
@@ -889,9 +936,6 @@ async function startWhatsApp() {
               continue;
 
             }
-
-            if (!chat)
-              continue;
 
             // ------------------------------------------
             // CONTA RICEVUTO
