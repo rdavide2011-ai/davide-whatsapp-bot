@@ -16,18 +16,24 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE BOT
 // ======================================================
 
-const BOT_VERSION = "1.0.6";
+const BOT_VERSION = "1.0.7";
 
 // ======================================================
 // SUPABASE
 // ======================================================
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const SUPABASE_URL =
+  process.env.SUPABASE_URL;
+
+const SUPABASE_SECRET_KEY =
+  process.env.SUPABASE_SECRET_KEY;
 
 let supabase = null;
 
-if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
+if (
+  SUPABASE_URL &&
+  SUPABASE_SECRET_KEY
+) {
   supabase = createClient(
     SUPABASE_URL,
     SUPABASE_SECRET_KEY,
@@ -39,9 +45,14 @@ if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
     }
   );
 
-  console.log("✅ Supabase configurato correttamente.");
+  console.log(
+    "✅ Supabase configurato correttamente."
+  );
 } else {
-  console.error("❌ ERRORE: variabili Supabase mancanti.");
+  console.error(
+    "❌ ERRORE: variabili Supabase mancanti."
+  );
+
   console.error(
     "Controlla SUPABASE_URL e SUPABASE_SECRET_KEY su Railway."
   );
@@ -62,26 +73,40 @@ let messagesSent = 0;
 let commandsExecuted = 0;
 
 // ======================================================
+// PAUSA DAVIDE
+// ======================================================
+
+const DAVIDE_PAUSE_MS =
+  5 * 60 * 60 * 1000;
+
+// ======================================================
 // MESSAGGI INVIATI DAL BOT
 // ======================================================
 
 const botSentMessageIds = new Set();
 
 function rememberBotMessage(messageId) {
-  if (!messageId) return;
+  if (!messageId) {
+    return;
+  }
 
   botSentMessageIds.add(messageId);
 
   if (botSentMessageIds.size > 500) {
-    const firstId = botSentMessageIds.values().next().value;
+    const firstId =
+      botSentMessageIds.values().next().value;
+
     botSentMessageIds.delete(firstId);
   }
 }
 
 function isBotMessage(messageId) {
-  if (!messageId) return false;
+  if (!messageId) {
+    return false;
+  }
 
-  const result = botSentMessageIds.has(messageId);
+  const result =
+    botSentMessageIds.has(messageId);
 
   if (result) {
     botSentMessageIds.delete(messageId);
@@ -91,13 +116,7 @@ function isBotMessage(messageId) {
 }
 
 // ======================================================
-// PAUSA DAVIDE
-// ======================================================
-
-const DAVIDE_PAUSE_MS = 5 * 60 * 60 * 1000;
-
-// ======================================================
-// QR
+// QR CODE
 // ======================================================
 
 function getQR() {
@@ -105,7 +124,7 @@ function getQR() {
 }
 
 // ======================================================
-// CHAT PRIVATE
+// CONTROLLA CHAT PRIVATA
 // ======================================================
 
 function isPrivateChat(jid) {
@@ -123,7 +142,7 @@ function isPrivateChat(jid) {
     return false;
   }
 
-  // Community / newsletter
+  // Community / Newsletter
   if (jid.endsWith("@newsletter")) {
     return false;
   }
@@ -142,7 +161,7 @@ function isPrivateChat(jid) {
 }
 
 // ======================================================
-// LEGGI STATO CHAT
+// LEGGI STATO CHAT DA SUPABASE
 // ======================================================
 
 async function getChatState(chatId) {
@@ -159,7 +178,10 @@ async function getChatState(chatId) {
       .select(
         "chat_id, mode, paused_until, updated_at"
       )
-      .eq("chat_id", chatId)
+      .eq(
+        "chat_id",
+        chatId
+      )
       .maybeSingle();
 
     if (error) {
@@ -172,6 +194,7 @@ async function getChatState(chatId) {
     }
 
     return data || null;
+
   } catch (error) {
     console.error(
       "❌ Errore Supabase getChatState:",
@@ -183,7 +206,7 @@ async function getChatState(chatId) {
 }
 
 // ======================================================
-// SALVA STATO CHAT
+// SALVA STATO CHAT SU SUPABASE
 // ======================================================
 
 async function saveChatState(
@@ -205,7 +228,8 @@ async function saveChatState(
           chat_id: chatId,
           mode: mode,
           paused_until: pausedUntil,
-          updated_at: new Date().toISOString()
+          updated_at:
+            new Date().toISOString()
         },
         {
           onConflict: "chat_id"
@@ -231,6 +255,7 @@ async function saveChatState(
     );
 
     return true;
+
   } catch (error) {
     console.error(
       "❌ Errore Supabase saveChatState:",
@@ -246,28 +271,40 @@ async function saveChatState(
 // ======================================================
 
 function getUptime() {
-  const seconds = Math.floor(
-    (Date.now() - botStartTime) / 1000
-  );
+  const seconds =
+    Math.floor(
+      (Date.now() - botStartTime) /
+      1000
+    );
 
-  const days = Math.floor(seconds / 86400);
+  const days =
+    Math.floor(
+      seconds / 86400
+    );
 
-  const hours = Math.floor(
-    (seconds % 86400) / 3600
-  );
+  const hours =
+    Math.floor(
+      (seconds % 86400) /
+      3600
+    );
 
-  const minutes = Math.floor(
-    (seconds % 3600) / 60
-  );
+  const minutes =
+    Math.floor(
+      (seconds % 3600) /
+      60
+    );
 
-  const secs = seconds % 60;
+  const secs =
+    seconds % 60;
 
   const parts = [];
 
   if (days > 0) {
     parts.push(
       `${days} ${
-        days === 1 ? "giorno" : "giorni"
+        days === 1
+          ? "giorno"
+          : "giorni"
       }`
     );
   }
@@ -275,7 +312,9 @@ function getUptime() {
   if (hours > 0) {
     parts.push(
       `${hours} ${
-        hours === 1 ? "ora" : "ore"
+        hours === 1
+          ? "ora"
+          : "ore"
       }`
     );
   }
@@ -283,7 +322,9 @@ function getUptime() {
   if (minutes > 0) {
     parts.push(
       `${minutes} ${
-        minutes === 1 ? "minuto" : "minuti"
+        minutes === 1
+          ? "minuto"
+          : "minuti"
       }`
     );
   }
@@ -294,7 +335,9 @@ function getUptime() {
   ) {
     parts.push(
       `${secs} ${
-        secs === 1 ? "secondo" : "secondi"
+        secs === 1
+          ? "secondo"
+          : "secondi"
       }`
     );
   }
@@ -303,7 +346,7 @@ function getUptime() {
 }
 
 // ======================================================
-// TESTO MESSAGGIO
+// ESTRAI TESTO
 // ======================================================
 
 function getMessageText(message) {
@@ -322,7 +365,7 @@ function getMessageText(message) {
 }
 
 // ======================================================
-// ID PULSANTE
+// ESTRAI ID PULSANTE
 // ======================================================
 
 function getButtonId(message) {
@@ -339,17 +382,19 @@ function getButtonId(message) {
       ?.paramsJson
   ) {
     try {
-      const params = JSON.parse(
-        response
-          .nativeFlowResponseMessage
-          .paramsJson
-      );
+      const params =
+        JSON.parse(
+          response
+            .nativeFlowResponseMessage
+            .paramsJson
+        );
 
       return (
         params.id ||
         params.selected_id ||
         ""
       );
+
     } catch (error) {
       console.log(
         "⚠️ Errore lettura risposta pulsante:",
@@ -374,10 +419,13 @@ function getButtonId(message) {
 // ======================================================
 
 function getPrivacyModeTs() {
-  const offset = 77980457;
+  const offset =
+    77980457;
 
   return (
-    Math.floor(Date.now() / 1000) -
+    Math.floor(
+      Date.now() / 1000
+    ) -
     offset
   ).toString();
 }
@@ -422,7 +470,8 @@ function buildMixedNativeFlowBizNode() {
         tag: "quality_control",
 
         attrs: {
-          source_type: "third_party"
+          source_type:
+            "third_party"
         }
       }
     ]
@@ -442,8 +491,11 @@ function createQuickReplyButton(
 
     buttonParamsJson:
       JSON.stringify({
-        display_text: displayText,
-        id: id
+        display_text:
+          displayText,
+
+        id:
+          id
       })
   };
 }
@@ -457,10 +509,11 @@ async function sendTrackedMessage(
   jid,
   content
 ) {
-  const sent = await sock.sendMessage(
-    jid,
-    content
-  );
+  const sent =
+    await sock.sendMessage(
+      jid,
+      content
+    );
 
   if (sent?.key?.id) {
     rememberBotMessage(
@@ -474,7 +527,7 @@ async function sendTrackedMessage(
 }
 
 // ======================================================
-// INVIA SCELTA DAVIDE / AI
+// MENU ASSISTENTE / DAVIDE
 // ======================================================
 
 async function sendModeSelection(
@@ -486,6 +539,7 @@ async function sendModeSelection(
   );
 
   const buttons = [
+
     createQuickReplyButton(
       "🤖 Assistente AI",
       "mode_ai"
@@ -495,6 +549,7 @@ async function sendModeSelection(
       "👤 Parla con Davide",
       "mode_davide"
     )
+
   ];
 
   const interactiveMessage =
@@ -505,7 +560,9 @@ async function sendModeSelection(
           .InteractiveMessage
           .Header
           .create({
-            hasMediaAttachment: false
+
+            hasMediaAttachment:
+              false
           }),
 
       body:
@@ -607,20 +664,6 @@ async function sendModeSelection(
 
   console.log(
     "✅ Scelta Assistente AI / Davide inviata."
-  );
-}
-
-// ======================================================
-// BENVENUTO
-// ======================================================
-
-async function sendWelcomeWithButton(
-  sock,
-  jid
-) {
-  await sendModeSelection(
-    sock,
-    jid
   );
 }
 
@@ -860,18 +903,21 @@ async function startWhatsApp() {
     const {
       state,
       saveCreds
-    } = await useMultiFileAuthState(
-      AUTH_FOLDER
-    );
+    } =
+      await useMultiFileAuthState(
+        AUTH_FOLDER
+      );
 
     const sock =
       makeWASocket({
 
-        auth: state,
+        auth:
+          state,
 
         logger:
           P({
-            level: "silent"
+            level:
+              "silent"
           }),
 
         browser:
@@ -921,7 +967,8 @@ async function startWhatsApp() {
         // QR
         if (qr) {
 
-          currentQR = qr;
+          currentQR =
+            qr;
 
           console.log(
             "📷 QR Code WhatsApp disponibile."
@@ -937,10 +984,12 @@ async function startWhatsApp() {
         // ==================================================
 
         if (
-          connection === "open"
+          connection ===
+          "open"
         ) {
 
-          currentQR = null;
+          currentQR =
+            null;
 
           whatsappConnected =
             true;
@@ -966,7 +1015,8 @@ async function startWhatsApp() {
 
           console.log("");
 
-          starting = false;
+          starting =
+            false;
         }
 
         // ==================================================
@@ -974,10 +1024,12 @@ async function startWhatsApp() {
         // ==================================================
 
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
 
-          currentQR = null;
+          currentQR =
+            null;
 
           whatsappConnected =
             false;
@@ -993,7 +1045,8 @@ async function startWhatsApp() {
             statusCode
           );
 
-          starting = false;
+          starting =
+            false;
 
           if (
             statusCode ===
@@ -1156,27 +1209,17 @@ async function startWhatsApp() {
                   chat
                 );
 
-              // ------------------------------------------
-              // DAVIDE SCRIVE DURANTE LA PAUSA
-              // ------------------------------------------
-
               if (
                 ownerState?.mode ===
                 "davide"
               ) {
 
-                // IMPORTANTE:
-                // NON disattiviamo la pausa.
-                // Il bot deve continuare a restare
-                // silenzioso fino alla scadenza
-                // delle 5 ore.
-
                 console.log(
-                  "👤 Davide ha scritto per primo."
+                  "👤 Davide ha scritto durante la modalità Davide."
                 );
 
                 console.log(
-                  "🤫 Il bot rimane silenzioso fino alla scadenza delle 5 ore."
+                  "🤫 Il bot rimane silenzioso fino alla scadenza della pausa."
                 );
               }
 
@@ -1190,7 +1233,7 @@ async function startWhatsApp() {
             messagesReceived++;
 
             // ==================================================
-            // STATO CHAT
+            // LEGGI STATO CHAT
             // ==================================================
 
             const chatState =
@@ -1216,6 +1259,35 @@ async function startWhatsApp() {
             }
 
             // ==================================================
+            // COMANDO /ON
+            // ==================================================
+
+            if (
+              text.toLowerCase() ===
+              "/on"
+            ) {
+
+              console.log(
+                "🟢 /on riconosciuto."
+              );
+
+              commandsExecuted++;
+
+              await saveChatState(
+                chat,
+                "normal",
+                null
+              );
+
+              await sendModeSelection(
+                sock,
+                chat
+              );
+
+              continue;
+            }
+
+            // ==================================================
             // MODALITÀ DAVIDE
             // ==================================================
 
@@ -1232,7 +1304,7 @@ async function startWhatsApp() {
                   : 0;
 
               // ------------------------------------------
-              // PAUSA ANCORA ATTIVA
+              // PAUSA ATTIVA
               // ------------------------------------------
 
               if (
@@ -1241,11 +1313,11 @@ async function startWhatsApp() {
               ) {
 
                 console.log(
-                  "🤫 Chat in modalità Davide."
+                  "🤫 Bot in pausa per questa chat."
                 );
 
                 console.log(
-                  "⏳ Pausa ancora attiva fino a:",
+                  "⏳ Pausa fino a:",
                   chatState.paused_until
                 );
 
@@ -1253,15 +1325,15 @@ async function startWhatsApp() {
               }
 
               // ------------------------------------------
-              // 5 ORE TERMINATE
+              // PAUSA TERMINATA
               // ------------------------------------------
 
               console.log(
-                "⏰ Pausa di 5 ore terminata."
+                "⏰ Le 5 ore sono terminate."
               );
 
               console.log(
-                "👤 La persona ha scritto per prima."
+                "📩 La persona ha scritto per prima."
               );
 
               await saveChatState(
@@ -1291,35 +1363,17 @@ async function startWhatsApp() {
                 "🤖 Chat in modalità Assistente AI."
               );
 
-              // L'AI verrà collegata nel prossimo
-              // passaggio.
+              // AI da collegare nel prossimo passaggio.
 
               continue;
             }
 
             // ==================================================
-            // COMANDO
-            // ==================================================
-
-            const command =
-              buttonId ||
-              text;
-
-            if (!command) {
-              continue;
-            }
-
-            console.log(
-              "🎯 Comando:",
-              command
-            );
-
-            // ==================================================
-            // 👤 PARLA CON DAVIDE
+            // PULSANTE PARLA CON DAVIDE
             // ==================================================
 
             if (
-              command ===
+              buttonId ===
               "mode_davide"
             ) {
 
@@ -1343,7 +1397,7 @@ async function startWhatsApp() {
               if (!saved) {
 
                 console.error(
-                  "❌ Impossibile salvare la modalità Davide."
+                  "❌ Impossibile salvare modalità Davide."
                 );
 
                 await sendTrackedMessage(
@@ -1351,7 +1405,7 @@ async function startWhatsApp() {
                   chat,
                   {
                     text:
-                      "❌ Non riesco ad attivare la modalità Davide in questo momento. Riprova."
+                      "❌ Non riesco ad attivare la modalità Davide. Riprova."
                   }
                 );
 
@@ -1365,7 +1419,7 @@ async function startWhatsApp() {
                   text:
                     "👤 *Modalità Davide attivata.*\n\n" +
                     "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
-                    "Se Davide ti scrive per primo, il bot rimarrà silenzioso fino alla fine della pausa."
+                    "Se vuoi riattivarlo prima, scrivi */on*."
                 }
               );
 
@@ -1373,11 +1427,11 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // 🤖 ASSISTENTE AI
+            // PULSANTE ASSISTENTE AI
             // ==================================================
 
             if (
-              command ===
+              buttonId ===
               "mode_ai"
             ) {
 
@@ -1395,7 +1449,7 @@ async function startWhatsApp() {
               if (!saved) {
 
                 console.error(
-                  "❌ Impossibile salvare la modalità AI."
+                  "❌ Impossibile salvare modalità AI."
                 );
 
                 continue;
@@ -1419,7 +1473,7 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              command.toLowerCase() ===
+              text.toLowerCase() ===
               "/comandi"
             ) {
 
@@ -1442,7 +1496,7 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              command.toLowerCase() ===
+              text.toLowerCase() ===
               "/stato"
             ) {
 
@@ -1479,7 +1533,7 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              command.toLowerCase() ===
+              text.toLowerCase() ===
               "/uptime"
             ) {
 
@@ -1511,7 +1565,7 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              command.toLowerCase() ===
+              text.toLowerCase() ===
               "/info"
             ) {
 
@@ -1547,7 +1601,7 @@ async function startWhatsApp() {
             // ==================================================
 
             if (
-              command.toLowerCase() ===
+              text.toLowerCase() ===
               "/statistiche"
             ) {
 
@@ -1577,46 +1631,20 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // CIAO
-            // ==================================================
-
-            if (
-              command.toLowerCase() ===
-              "ciao"
-            ) {
-
-              console.log(
-                "👋 Ciao riconosciuto."
-              );
-
-              try {
-
-                await sendWelcomeWithButton(
-                  sock,
-                  chat
-                );
-
-              } catch (error) {
-
-                console.error(
-                  "❌ ERRORE INVIO BENVENUTO:"
-                );
-
-                console.error(
-                  error
-                );
-              }
-
-              continue;
-            }
-
-            // ==================================================
-            // COMANDO NON RICONOSCIUTO
+            // QUALSIASI ALTRO MESSAGGIO
             // ==================================================
 
             console.log(
-              "ℹ️ Comando non riconosciuto:",
-              command
+              "💬 Messaggio normale ricevuto."
+            );
+
+            console.log(
+              "🤖 Attivo il bot perché la chat è in modalità normale."
+            );
+
+            await sendModeSelection(
+              sock,
+              chat
             );
 
           } catch (error) {
