@@ -16,7 +16,7 @@ const AUTH_FOLDER = "./auth_info";
 // VERSIONE BOT
 // ======================================================
 
-const BOT_VERSION = "1.0.8";
+const BOT_VERSION = "1.0.9";
 
 // ======================================================
 // SUPABASE
@@ -132,22 +132,27 @@ function isPrivateChat(jid) {
     return false;
   }
 
+  // Gruppi
   if (jid.endsWith("@g.us")) {
     return false;
   }
 
+  // Broadcast
   if (jid.endsWith("@broadcast")) {
     return false;
   }
 
+  // Community / Newsletter
   if (jid.endsWith("@newsletter")) {
     return false;
   }
 
+  // Chat private
   if (jid.endsWith("@s.whatsapp.net")) {
     return true;
   }
 
+  // Chat private LID
   if (jid.endsWith("@lid")) {
     return true;
   }
@@ -826,6 +831,61 @@ async function sendCommandsWithButtons(
 }
 
 // ======================================================
+// ATTIVA MODALITÀ DAVIDE
+// ======================================================
+
+async function activateDavideMode(
+  sock,
+  chat
+) {
+  console.log(
+    "👤 Attivazione automatica modalità Davide."
+  );
+
+  const pausedUntil =
+    new Date(
+      Date.now() +
+      DAVIDE_PAUSE_MS
+    ).toISOString();
+
+  const saved =
+    await saveChatState(
+      chat,
+      "davide",
+      pausedUntil
+    );
+
+  if (!saved) {
+
+    console.error(
+      "❌ Impossibile salvare modalità Davide."
+    );
+
+    await sendTrackedMessage(
+      sock,
+      chat,
+      {
+        text:
+          "❌ Non riesco ad attivare la modalità Davide. Riprova."
+      }
+    );
+
+    return;
+  }
+
+  await sendTrackedMessage(
+    sock,
+    chat,
+    {
+      text:
+        "👤 *Modalità Davide attivata.*\n\n" +
+        "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
+        "Se vuoi riattivarlo prima, scrivi */on*."
+    }
+  );
+}
+
+// ======================================================
 // AVVIO WHATSAPP
 // ======================================================
 
@@ -1219,7 +1279,7 @@ async function startWhatsApp() {
             messagesReceived++;
 
             // ==================================================
-            // STATO CHAT
+            // LEGGI STATO CHAT
             // ==================================================
 
             const chatState =
@@ -1265,8 +1325,7 @@ async function startWhatsApp() {
                 null
               );
 
-              // IMPORTANTISSIMO:
-              // NON rispondiamo a /on.
+              // NON RISPONDE AL COMANDO.
               // Il prossimo messaggio farà
               // partire nuovamente il bot.
 
@@ -1294,7 +1353,7 @@ async function startWhatsApp() {
                   : 0;
 
               // ------------------------------------------
-              // PAUSA ATTIVA
+              // PAUSA ANCORA ATTIVA
               // ------------------------------------------
 
               if (
@@ -1369,49 +1428,12 @@ async function startWhatsApp() {
             ) {
 
               console.log(
-                "👤 Modalità Davide selezionata."
+                "👤 Pulsante Parla con Davide selezionato."
               );
 
-              const pausedUntil =
-                new Date(
-                  Date.now() +
-                  DAVIDE_PAUSE_MS
-                ).toISOString();
-
-              const saved =
-                await saveChatState(
-                  chat,
-                  "davide",
-                  pausedUntil
-                );
-
-              if (!saved) {
-
-                console.error(
-                  "❌ Impossibile salvare modalità Davide."
-                );
-
-                await sendTrackedMessage(
-                  sock,
-                  chat,
-                  {
-                    text:
-                      "❌ Non riesco ad attivare la modalità Davide. Riprova."
-                  }
-                );
-
-                continue;
-              }
-
-              await sendTrackedMessage(
+              await activateDavideMode(
                 sock,
-                chat,
-                {
-                  text:
-                    "👤 *Modalità Davide attivata.*\n\n" +
-                    "Il bot resterà in pausa per 5 ore in questa chat.\n\n" +
-                    "Se vuoi riattivarlo prima, scrivi */on*."
-                }
+                chat
               );
 
               continue;
@@ -1622,7 +1644,7 @@ async function startWhatsApp() {
             }
 
             // ==================================================
-            // QUALSIASI MESSAGGIO
+            // QUALSIASI ALTRO MESSAGGIO
             // ==================================================
 
             console.log(
@@ -1630,10 +1652,14 @@ async function startWhatsApp() {
             );
 
             console.log(
-              "🤖 Attivo il bot perché la chat è in modalità normale."
+              "👤 La persona non ha premuto nessun pulsante."
             );
 
-            await sendModeSelection(
+            console.log(
+              "👤 Il bot interpreta il messaggio come richiesta di parlare con Davide."
+            );
+
+            await activateDavideMode(
               sock,
               chat
             );
